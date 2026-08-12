@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-NEXAM AI's recruitment lead generation system — Claude Code skills and Python scripts that scrape job postings, find decision makers, discover emails, generate personalized outreach, and push leads to Instantly campaigns. All code lives under `.claude/` (skills, agents, auth, env). There are no top-level source files.
+NEXAM AI's recruitment lead generation system — Claude Code skills and Python scripts that scrape job postings, find decision makers, discover emails, generate personalized outreach, and push leads to Instantly campaigns. All code lives under `.claude/` (skills, agents, auth, env). There are no top-level source files — the root `.html` is a generated campaign report, not code.
 
 **A Google Sheet is the database.** Almost every script reads a sheet, enriches rows in place, and writes back — there is no local model layer, no ORM, no intermediate store. That is why column constants, batch-of-10 writes, and idempotent skip-if-filled logic carry so much weight below. The exceptions are `nppes-new-clinics` and `production-house-leads`, which use SQLite upstream — though both then build sheets and work them like the rest.
 
@@ -197,7 +197,8 @@ Azure OpenAI env vars: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_O
 - Core env vars: `APIFY_API_TOKEN`, `ANYMAILFINDER_API_KEY`, `INSTANTLY_API_KEY`, `ANTHROPIC_API_KEY`
 - TheirStack pipelines also need: `THEIRSTACK_API_KEY`
 - Apollo waterfall scripts also need: `APOLLO_API_KEY`
-- `exa-website-enrichment` scripts also need: `EXA_API_KEY`
+- `exa-website-enrichment` scripts also need: `EXA_API_KEY` (`enrich_websites_apify.py` needs `APIFY_API_TOKEN` instead)
+- `production-directory-leads` needs `APIFY_API_TOKEN` (scrape + LinkedIn), `PURPLE_MAGIC_KEY`, `ANYMAILFINDER_API_KEY`, `INSTANTLY_API_KEY`, the Azure OpenAI vars (classification + the Apollo fallback's ranking) and `APOLLO_API_KEY`
 - `nppes-new-clinics` phases 1-3 need no API key (CMS data is free), only the Google OAuth token for `export_leads.py --to_sheet`. Its campaign track (below) needs `ANYMAILFINDER_API_KEY`, `PURPLE_MAGIC_KEY` (Purple Magic / ConnectorOS — `find_dm_waterfall.py`, `pm_rescue.py`), the Azure OpenAI vars, and `APIFY_API_TOKEN`
 - Google Sheets OAuth: `.claude/token.json` (setup via `.claude/setup_google_auth.py`)
 
@@ -240,6 +241,8 @@ AB:pipeline-specific  AC:pipeline-specific
 **healthcare-demand-pipeline** extends the base schema with AB:dm_status, AC:Indeed URL (`https://www.indeed.com/viewjob?jk={Job_Id}` — **AC always holds the Indeed URL, on every sheet; Jude's rule**), AD-AL generation audit trail (persona, age_band, cleaned_role, role_plural, team_word, employer_type, month, casual_company, review_status), AM:hq_state. **tech-leads-indeed** and **civil-engineering-leads-indeed** also have minor column differences — each SKILL.md has the verified layout.
 
 **`tech-leads-indeed`** adds `AB:template_variant` and `AC:cleaned_role` (populated by `generate_emails.py`).
+
+**`production-directory-leads`** extends the base schema with AB:Apollo/AMF waterfall status, **AC:PM Status** (the Purple Magic lane's own column — the two DM lanes must not share a status cell), AD:DM LinkedIn JSON, AE:site-pages JSON, AF:icebreaker, AG:fact_type, AH:Email 1 body. Note AH, not Z, is the body column on this lane.
 
 ⚠️ Always check `COL_*` constants at the top of a script before running it against a sheet — repurposed scripts with shifted columns have corrupted data before.
 

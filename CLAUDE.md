@@ -35,7 +35,9 @@ Each pipeline is a Claude Code skill with its own `SKILL.md` (authoritative deta
 
 Utilities: `casualize-names`, `instantly-autoreply`, `add-webhook`, `local-server`. (`classify-leads` and `scrape-leads` are empty leftover directories — ignore them.)
 
-**Skills do not own all their phases.** `hr-linkedin-leads` ships only 3 scripts (`scrape_and_pull.py`, `pull_dataset.py`, `enrich_company_profiles.py`) — everything from phase 1.5 onward is run out of `hr-leads-indeed/scripts/`, because both write the same 29-col schema. `healthcare-linkedin-leads` does the same. Calling another skill's script against your sheet is the normal pattern here, not a smell; check the SKILL.md's phase table for which directory each phase actually lives in.
+**Skills do not own all their phases.** `hr-linkedin-leads` ships only 3 scripts (`scrape_and_pull.py`, `pull_dataset.py`, `enrich_company_profiles.py`) — everything from phase 1.5 onward is run out of `hr-leads-indeed/scripts/`, because both write the same 29-col schema. Calling another skill's script against your sheet is the normal pattern here, not a smell; check the SKILL.md's phase table for which directory each phase actually lives in.
+
+⚠️ **`healthcare-linkedin-leads` is the exception — it does NOT hand off, and it is NOT on the 29-col schema.** Its own `SKILL.md` still says the downstream is "to be built"; that is stale. It ships 16 scripts and a complete self-contained pipeline on **its own column layout** (see below). Never point `hr-leads-indeed` scripts at its sheet — the `COL_*` constants do not line up.
 
 ## Phase Architecture (Indeed / LinkedIn pipelines)
 
@@ -148,7 +150,7 @@ Rules are pipeline-specific; see each SKILL.md. Summary:
 | `tech-leads-indeed` | 3-pass: CTO/VP Eng → CEO/Founder → Head of People (safety net) |
 | `civil-engineering-leads-indeed` | 2-pass: Owner/MD/CEO (<50) or COO/Ops Director (50-200) → fallback |
 | `healthcare-demand-pipeline` | **Fixed ladder: CEO → COO → Medical Director → nobody** (Jude, 2026-07-31). Lists capped at 500 employees. Only rung 1 is evidence-backed; 2 and 3 are coverage fallbacks. Banned: HR at any level, every other clinical title, site/regional ops, practice managers. No one findable → leave the row un-enriched |
-| `healthcare-linkedin-leads` | 3-pass fixed: Practice/Office Manager → Owner/Medical Director/CEO → Managing Partner (legacy routing) |
+| `healthcare-linkedin-leads` | **Routed by geographic spread, not by size** (`assign_target_role.py` → col Z, consumed by `find_dm_openings.py`): openings in ONE metro → CEO/Owner; openings across MULTIPLE metros → COO. The old Practice/Office Manager ladder is dead — do not reconstruct it |
 
 ### Measured DM evidence (healthcare demand, 4 campaigns, 1,209 leads, Jul 2026)
 
@@ -244,6 +246,8 @@ AB:pipeline-specific  AC:pipeline-specific
 
 **`production-directory-leads`** extends the base schema with AB:Apollo/AMF waterfall status, **AC:PM Status** (the Purple Magic lane's own column — the two DM lanes must not share a status cell), AD:DM LinkedIn JSON, AE:site-pages JSON, AF:icebreaker, AG:fact_type, AH:Email 1 body. Note AH, not Z, is the body column on this lane.
 
+**`healthcare-linkedin-leads` is off this schema entirely** — see its section below.
+
 ⚠️ Always check `COL_*` constants at the top of a script before running it against a sheet — repurposed scripts with shifted columns have corrupted data before.
 
 ## Shared Utility Scripts
@@ -271,6 +275,27 @@ Lead lists come from `borrowers.txt` / `lenders.txt` in the skill directory. No 
 ## verify-leads Quirks
 
 `verify-leads` takes **0-based column indices** as CLI args (A=0, B=1, …) instead of letter names. The scripts are schema-agnostic — you pass `--col_name`, `--col_website`, `--col_dm_name`, etc. for each run. Always check the exact flags against `verify-leads/SKILL.md` before running.
+
+## healthcare-linkedin-leads
+
+Self-contained pipeline (16 scripts) whose **`SKILL.md` documents only phases 1 and 1.85** and wrongly describes the rest as a handoff to `hr-leads-indeed` — docstrings are the reference for everything after ingest.
+
+It works off an **external LinkedIn-jobs export with a 20-col A-T source schema** (A:Title, B:Job Desc, C:Primary Description, H:Location, M:Company Name, O:createdAt, T:aboutLink), not the 29-col base. Enrichment appends from U onward: **U:Website, X:Employer Type / Openings, Y:Openings Detail, Z:Target Role, AA:DM Name, AB:DM Title, AC:DM LinkedIn, AD:Email, AE:Icebreaker, AF:Clean Company, AG:Email Body.** Note the collisions with the base schema — M is Company Name here (K elsewhere) and AD is the email (W elsewhere).
+
+**Two-tab, two-campaign structure.** `build_opening_tabs.py` splits ICP rows into a **Multiple Openings** tab (companies with >1 posting, one row per opening) and a **Single Opening** tab, and everything downstream runs per tab with its own copy and its own campaign — the same clone-don't-parameterize convention used elsewhere.
+
+| Step | Script | Purpose |
+|------|--------|---------|
+| 1 | `scrape_and_pull.py` | LinkedIn low-applicant scrape → sheet |
+| 1.85 | `enrich_company_profiles.py` / `enrich_company_websites.py` | Website, size, description from the LinkedIn company profile |
+| 1.9 | `classify_agencies.py` → `classify_employer_type.py` | Drop agencies/job boards, then keep only `independent_practice` (col X) — platforms, systems and chains are cut here |
+| 2.0 | `build_opening_tabs.py` | Split into the Multiple / Single tabs |
+| 2.1 | `assign_target_role.py` | Metro-spread routing → col Z (CEO/Owner vs COO) |
+| 2.2 | `find_dm_openings.py` | DM per col Z's target |
+| 3 | `backfill_emails.py` | AMF person endpoint for rows with a DM name but no email |
+| 3.5 | `clean_company_names.py` | LLM company-name cleanup → AF (one call per unique name) |
+| 4 | `generate_icebreakers.py` → `generate_multi_emails.py` / `generate_single_emails.py` | Per-tab copy |
+| 5 | `push_multi_campaign.py` / `push_single_campaign.py` | One Instantly campaign per tab |
 
 ## healthcare-staffing-enrichment
 
@@ -401,6 +426,7 @@ The store → campaign sheet → verified email → copy path, built as untracke
 | Sheet | `build_commercial_sheet.py` | THE current sheet (scope agreed 2026-08-04): full commercial pool — multi-staff clinics, provider practices, home-care/nursing agencies, facilities IN; solo PLLCs and non-clinical social services OUT. Facility Type (col B) is the per-CODE NUCC display name (never per-prefix — a prefix bucket once swept in a horse stable). Fully shuffled by explicit instruction so reply data, not ordering, decides what works |
 | Domains | `resolve_domains_batch.py` | Same Google-via-Apify + LLM pick as Indiana's `find_company_domains.py`, plus one behavior: misses stamp AB=`fcd_no_match` so reruns reach fresh rows (the original re-Googles the same failures: 400 lookups → 7 new domains on pass two) |
 | Domains | `resolve_parent_domains.py` | For shell-LLC rows ("FAIRVIEW OPCO LLC"), search the Parent Org LBN (col J) instead; writes the parent domain with AB=`parent_domain` — for a health-system site the parent is where buying power lives |
+| Email | `enrich_leads.py` | **Phase 3.5, store-side (not sheet-side) — costs money.** Domain (Apify Google + GPT-4.1, ~$0.007/company) → AMF person on the Authorized Official (1 credit per found valid email). No Apollo waterfall and no DM ranking: NPPES already names the DM, and the AO is the owner/CEO on 65% of records. `--owners_only` defaults ON, `--backed_first` orders expansion rows first (a parent business means a site already exists). Failures keep their phone and stay in the store for a later retry |
 | Email | `find_ceo_emails.py` | Campaign-sheet layout. AO title owner-like → AMF person (1 credit); else AMF /decision-maker `ceo` (2 credits). `--target N` stops once N valid emails exist |
 | Email | `find_dm_waterfall.py` | Commercial-sheet layout. **The filer is the target — deterministically** (the docstring still describes an LLM gate; the in-code comments dated 2026-08-04 supersede it: the gate was tried and wrongly rejected COOs and Office Managers — filing an NPI is itself evidence of authority). Only support-function titles (`NOT_TARGET` regex: finance, legal, billing, IT, marketing, front desk…) fall through to PM /decision-makers + GPT-5.1 ranking, with a **positive gate** on ranked titles (unknown fails; "Assistant to CEO" can't ride the word CEO through). Col AI records which lane won |
 | Email | `pm_rescue.py` | Purple Magic second lane over AMF `not_found` rows — AMF misses ~65% here because practices registered 30-90 days ago barely exist on the web yet |

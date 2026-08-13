@@ -128,6 +128,7 @@ def main():
     ap.add_argument("--cities", default=None)
     ap.add_argument("--keywords", default=None)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--state", default="VIC", help="state stamp for new rows")
     ap.add_argument("--dry_run", action="store_true")
     args = ap.parse_args()
 
@@ -169,14 +170,14 @@ def main():
                 excluded = "contractor"
             cur = db.execute("""
                 INSERT INTO companies
-                    (company, company_norm, suburb, website, employee_count,
+                    (company, company_norm, state, suburb, website, employee_count,
                      categories, evidence, evidence_detail, excluded)
-                VALUES (?,?,?,?,?,?, 'job_ad', ?, ?)
+                VALUES (?,?,?,?,?,?,?, 'job_ad', ?, ?)
                 ON CONFLICT(company_norm, state) DO UPDATE SET
                     website = COALESCE(companies.website, excluded.website),
                     employee_count = COALESCE(companies.employee_count,
                                               excluded.employee_count)
-            """, (name, nn, loc.get("city"),
+            """, (name, nn, args.state, loc.get("city"),
                   emp.get("corporateWebsite"), emp.get("employeesCount"),
                   sig, f"{it.get('title', '')[:80]} | {sig_text}", excluded))
             if cur.rowcount and db.execute(

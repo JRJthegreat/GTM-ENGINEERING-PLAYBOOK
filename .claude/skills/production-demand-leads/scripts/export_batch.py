@@ -19,6 +19,7 @@ Usage: python3 -W ignore export_batch.py [--max_rows 300] [--min_score 0]
 """
 import argparse
 import json
+import re
 import sys
 from datetime import date
 
@@ -35,9 +36,19 @@ HEADERS = [
     "Signal Stack", "Indeed URL",
 ]
 WEIGHTS = {"ad_stale": 3.0, "video_job": 2.0, "new_exec": 2.0, "funding": 1.5}
+# Indeed keyword drift is real — a video_job signal only carries full weight
+# when the job title is actually a video/content role; otherwise it degrades
+# to weak evidence (0.5) that the company is hiring in marketing at all.
+VIDEO_TITLE_RE = re.compile(
+    r"video|videograph|content|multimedia|creative|photo|social media|brand", re.I)
 
-def score_company(sig_types):
-    s = sum(WEIGHTS.get(t, 0) for t in sig_types)
+def score_company(sig_types, video_titles):
+    s = 0.0
+    for t in sig_types:
+        if t == "video_job":
+            s += 2.0 if any(VIDEO_TITLE_RE.search(x or "") for x in video_titles) else 0.5
+        else:
+            s += WEIGHTS.get(t, 0)
     return s + max(0, len(sig_types) - 1)
 
 def build_rows(con, include_exported):
@@ -52,7 +63,9 @@ def build_rows(con, include_exported):
         if not sigs:
             continue
         types = sorted({t for t, _, _ in sigs})
-        sc = score_company(types)
+        video_titles = [json.loads(d).get("job_title", "")
+                        for t, d, _ in sigs if t == "video_job"]
+        sc = score_company(types, video_titles)
         newest = max((e for _, _, e in sigs if e), default="")
         job = next((json.loads(d) for t, d, _ in sigs if t == "video_job"), None)
         job_key = ""

@@ -62,6 +62,8 @@ def extract(client, author, content):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max_posts", type=int, default=40)
+    ap.add_argument("--dataset_id", default="",
+                    help="reuse an existing Apify dataset instead of re-running the actor")
     ap.add_argument("--dry_run", action="store_true")
     args = ap.parse_args()
 
@@ -71,10 +73,15 @@ def main():
             print(f"  {q}")
         return
 
-    r = requests.post(URL, params={"token": APIFY_API_TOKEN},
-                      json={"searchQueries": QUERIES, "maxPosts": args.max_posts,
-                            "sortBy": "date", "postedLimit": "month"},
-                      timeout=600)
+    if args.dataset_id:
+        r = requests.get(
+            f"https://api.apify.com/v2/datasets/{args.dataset_id}/items",
+            params={"token": APIFY_API_TOKEN, "clean": 1}, timeout=300)
+    else:
+        r = requests.post(URL, params={"token": APIFY_API_TOKEN},
+                          json={"searchQueries": QUERIES, "maxPosts": args.max_posts,
+                                "sortBy": "date", "postedLimit": "month"},
+                          timeout=600)
     if r.status_code not in (200, 201):
         print(f"HTTP {r.status_code}: {r.text[:300]}")
         return 1
@@ -98,7 +105,8 @@ def main():
     con = connect()
     kept = 0
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futs = {pool.submit(extract, c[0].get("name", ""), c[1]): c for c in cands}
+        futs = {pool.submit(extract, client, c[0].get("name", ""), c[1]): c
+                for c in cands}
         for f in as_completed(futs):
             a, content, url, posted = futs[f]
             v = f.result()

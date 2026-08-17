@@ -70,7 +70,7 @@ SHIFT_RE = re.compile(
     r"|2 shift|two shift|continental (?:shift|roster)|shift work|dayshift and"
     r"|day and afternoon|around the clock", re.I)
 EQUIP_RE = re.compile(
-    r"\bboiler|chiller|refrigerat|freezer|blast free[zs]|cool ?room|cold ?store"
+    r"\bboiler(?!\s?maker)s?\b|boiler operator|chiller|refrigerat|freezer|blast free[zs]|cool ?room|cold ?store"
     r"|compressed air|compressor|\bhvac\b|air handling|ammonia|glycol"
     r"|\boven[s]?\b|furnace|kiln|autoclave|retort|steam plant", re.I)
 AGENCY_RE = re.compile(

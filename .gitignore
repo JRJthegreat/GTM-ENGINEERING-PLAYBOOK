@@ -20,6 +20,7 @@
 .claude/skills/production-house-leads/data/
 .claude/skills/production-directory-leads/data/
 .claude/skills/energy-emaas-leads/data/
+.claude/skills/production-demand-leads/data/
 
 # Python
 __pycache__/

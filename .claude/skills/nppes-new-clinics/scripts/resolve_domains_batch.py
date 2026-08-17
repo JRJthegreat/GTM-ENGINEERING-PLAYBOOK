@@ -58,7 +58,14 @@ def main():
     ap.add_argument("--sheet_url", required=True)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--dry_run", action="store_true")
+    ap.add_argument("--status_prefix", default="",
+                    help="comma-separated Status (col E) prefixes to restrict to, "
+                         "e.g. 'NEW LOCATION,NEW SITE' — empty means all rows")
+    ap.add_argument("--freshest_first", action="store_true",
+                    help="order by enumeration date (col F) descending instead of "
+                         "sheet order — reply data says recency carries the result")
     args = ap.parse_args()
+    prefixes = tuple(p.strip() for p in args.status_prefix.split(",") if p.strip())
 
     svc = get_service()
     sid = args.sheet_url.split("/d/")[1].split("/")[0]
@@ -69,11 +76,16 @@ def main():
         return r[i].strip() if len(r) > i and r[i] else ""
 
     by_company = {}
+    company_date = {}
     for n, r in enumerate(values, start=2):
         comp = cell(r, C_COMPANY)
-        if comp and not cell(r, C_WEBSITE) and not cell(r, C_AB):
+        if comp and not cell(r, C_WEBSITE) and not cell(r, C_AB) \
+                and (not prefixes or cell(r, 4).startswith(prefixes)):
             by_company.setdefault(comp, []).append(n)
+            company_date[comp] = max(company_date.get(comp, ""), cell(r, 5))
     companies = list(by_company.keys())
+    if args.freshest_first:
+        companies.sort(key=lambda c: company_date[c], reverse=True)
     if args.limit:
         companies = companies[:args.limit]
     print(f"[fcd-wrap] {len(companies)} unique fresh companies "

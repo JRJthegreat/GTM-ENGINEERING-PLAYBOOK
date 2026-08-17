@@ -345,7 +345,12 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--dry_run", action="store_true")
+    ap.add_argument("--status_prefix", default="",
+                    help="comma-separated Status (col E) prefixes to restrict to, "
+                         "e.g. 'NEW LOCATION,NEW SITE' — empty means all rows "
+                         "(Aug batch 2: NEW PRACTICE dropped on reply data)")
     args = ap.parse_args()
+    prefixes = tuple(p.strip() for p in args.status_prefix.split(",") if p.strip())
 
     svc = get_service()
     sid = args.sheet_url.split("/d/")[1].split("/")[0]
@@ -358,7 +363,8 @@ def main():
     have = sum(1 for r in values if cell(r, C_EMAIL))
     todo = [(n, r, norm_domain(cell(r, C_WEBSITE)))
             for n, r in enumerate(values, start=2)
-            if cell(r, C_WEBSITE) and not cell(r, C_EMAIL) and not cell(r, C_EMAIL_STATUS)]
+            if cell(r, C_WEBSITE) and not cell(r, C_EMAIL) and not cell(r, C_EMAIL_STATUS)
+            and (not prefixes or cell(r, C_STATUS_LEAD).startswith(prefixes))]
     if args.limit:
         todo = todo[:args.limit]
 

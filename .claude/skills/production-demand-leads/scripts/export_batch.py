@@ -51,8 +51,23 @@ def score_company(sig_types, video_titles):
             s += WEIGHTS.get(t, 0)
     return s + max(0, len(sig_types) - 1)
 
-def build_rows(con, include_exported):
-    q = "SELECT id, name, size, city, state, website FROM companies WHERE category='BRAND'"
+def score_game(details):
+    """Gaming lane: publisher money + trailer gap + a set date = window entered."""
+    best = 0.0
+    for d in details:
+        s = 2.0
+        if d.get("publisher_attached"):
+            s += 1.5
+        if (d.get("trailer_count") or 0) <= 1:
+            s += 1.5
+        if re.search(r"\d{4}", d.get("release_date") or ""):
+            s += 0.5
+        best = max(best, s)
+    return best
+
+def build_rows(con, include_exported, lane="brand"):
+    cat = "GAME" if lane == "gaming" else "BRAND"
+    q = f"SELECT id, name, size, city, state, website FROM companies WHERE category='{cat}'"
     if not include_exported:
         q += " AND exported_at=''"
     out = []
@@ -63,6 +78,25 @@ def build_rows(con, include_exported):
         if not sigs:
             continue
         types = sorted({t for t, _, _ in sigs})
+        if lane == "gaming":
+            games = [json.loads(d) for t, d, _ in sigs if t == "game_launch"]
+            if not games:
+                continue
+            sc = score_game(games)
+            g = games[0]
+            row = [""] * len(HEADERS)
+            row[10] = name
+            row[11] = website
+            row[15] = (f"Game: {g.get('game')} | release {g.get('release_date')} | "
+                       f"trailers {g.get('trailer_count')} | "
+                       f"{', '.join(g.get('genres') or [])[:60]} | "
+                       f"{g.get('short_description','')}")[:400]
+            row[27] = (f"score={sc:g} | game_launch:{g.get('game')} "
+                       f"rel={g.get('release_date')} trailers={g.get('trailer_count')} "
+                       f"pub={'y' if g.get('publisher_attached') else 'n'} | "
+                       f"{g.get('steam_url','')}")
+            out.append((sc, max((e for _, _, e in sigs if e), default=""), cid, row))
+            continue
         video_titles = [json.loads(d).get("job_title", "")
                         for t, d, _ in sigs if t == "video_job"]
         sc = score_company(types, video_titles)
@@ -126,6 +160,7 @@ def build_rows(con, include_exported):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--lane", choices=["brand", "gaming"], default="brand")
     ap.add_argument("--max_rows", type=int, default=300)
     ap.add_argument("--min_score", type=float, default=0)
     ap.add_argument("--include_exported", action="store_true")
@@ -134,7 +169,7 @@ def main():
     args = ap.parse_args()
 
     con = connect()
-    rows = [r for r in build_rows(con, args.include_exported)
+    rows = [r for r in build_rows(con, args.include_exported, args.lane)
             if r[0] >= args.min_score][:args.max_rows]
     print(f"{len(rows)} rows to export")
     stacked = sum(1 for sc, _, _, _ in rows if sc > 3)

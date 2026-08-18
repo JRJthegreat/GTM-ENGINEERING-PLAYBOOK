@@ -166,6 +166,9 @@ def main():
     ap.add_argument("--include_exported", action="store_true")
     ap.add_argument("--dry_run", action="store_true")
     ap.add_argument("--title", default="")
+    ap.add_argument("--append_to", default="",
+                    help="URL/id of the master spreadsheet: append to its lane tab "
+                         "(Brand/Gaming) instead of creating a new spreadsheet")
     args = ap.parse_args()
 
     con = connect()
@@ -180,6 +183,28 @@ def main():
         return
 
     svc = get_google_service()
+
+    if args.append_to:
+        import re as _re
+        m = _re.search(r"/d/([A-Za-z0-9_-]+)", args.append_to)
+        sid = m.group(1) if m else args.append_to
+        tab = "Gaming" if args.lane == "gaming" else "Brand"
+        written = 0
+        for i in range(0, len(rows), 10):
+            chunk = rows[i:i + 10]
+            svc.spreadsheets().values().append(
+                spreadsheetId=sid, range=f"'{tab}'!A1", valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [r for _, _, _, r in chunk]}).execute()
+            for _, _, cid, _ in chunk:
+                con.execute("UPDATE companies SET exported_at=? WHERE id=?",
+                            (now_iso(), cid))
+            con.commit()
+            written += len(chunk)
+        print(f"done: {written} rows appended to '{tab}' tab -> "
+              f"https://docs.google.com/spreadsheets/d/{sid}/edit")
+        return
+
     title = args.title or f"Production Demand - {date.today().isoformat()}"
     resp = svc.spreadsheets().create(body={"properties": {"title": title}},
                                      fields="spreadsheetId").execute()

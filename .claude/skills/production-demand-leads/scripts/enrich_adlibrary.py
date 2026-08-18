@@ -25,8 +25,22 @@ SYNC = ("https://api.apify.com/v2/acts/curious_coder~facebook-ads-library-scrape
         "run-sync-get-dataset-items")
 STALE_DAYS = 90
 
+import re as _re
+_LEGAL_TAIL = _re.compile(
+    r"[,.]?\s*\b(incorporated|inc|llc|l\.l\.c|corp|corporation|co|company|ltd|"
+    r"limited|holdings?|pbc|lp|l\.p)\b\.?\s*$", _re.I)
+
+def clean_brand(name):
+    """Legal entity names ('HYKU BIOSCIENCES INC.') never match Meta page
+    names ('Hyku') — strip legal tails (repeatedly) before searching."""
+    prev = None
+    while prev != name:
+        prev = name
+        name = _LEGAL_TAIL.sub("", name).strip(" ,.")
+    return name or prev
+
 def search_url(brand):
-    q = urllib.parse.quote(f'"{brand}"')
+    q = urllib.parse.quote(f'"{clean_brand(brand)}"')
     return ("https://www.facebook.com/ads/library/?active_status=active"
             f"&ad_type=all&country=US&q={q}&search_type=keyword_exact_phrase"
             "&media_type=all")
@@ -57,12 +71,17 @@ def main():
     ap.add_argument("--per_brand", type=int, default=12)
     ap.add_argument("--batch", type=int, default=10)
     ap.add_argument("--retry_checked", action="store_true")
+    ap.add_argument("--only_funded", action="store_true",
+                    help="restrict to companies with a funding signal")
     args = ap.parse_args()
 
     con = connect()
-    q = "SELECT id, name, norm FROM companies WHERE category='BRAND'"
+    q = "SELECT DISTINCT c.id, c.name, c.norm FROM companies c"
+    if args.only_funded:
+        q += " JOIN signals s ON s.company_id=c.id AND s.type='funding'"
+    q += " WHERE c.category='BRAND'"
     if not args.retry_checked:
-        q += " AND ad_checked=0"
+        q += " AND c.ad_checked=0"
     rows = con.execute(q).fetchall()
     if args.limit:
         rows = rows[:args.limit]

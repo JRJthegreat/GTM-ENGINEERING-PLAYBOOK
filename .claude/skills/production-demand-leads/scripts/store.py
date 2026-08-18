@@ -41,8 +41,9 @@ def now_iso():
 
 def connect():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=30000")
     con.executescript("""
     CREATE TABLE IF NOT EXISTS companies (
       id INTEGER PRIMARY KEY,

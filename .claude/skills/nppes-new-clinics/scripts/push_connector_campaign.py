@@ -59,9 +59,9 @@ def headers():
             "Content-Type": "application/json"}
 
 
-def create_campaign():
+def create_campaign(name=CAMPAIGN_NAME):
     payload = {
-        "name": CAMPAIGN_NAME,
+        "name": name,
         "campaign_schedule": {"schedules": [{
             "name": "New schedule",
             "timing": {"from": "09:00", "to": "18:00"},
@@ -98,6 +98,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet_url", required=True)
     ap.add_argument("--campaign_id", default="", help="reuse an existing campaign")
+    ap.add_argument("--campaign_name", default=CAMPAIGN_NAME,
+                    help="name for a newly created campaign (ignored with --campaign_id)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--dry_run", action="store_true")
     args = ap.parse_args()
@@ -156,7 +158,7 @@ def main():
                   f"city={l['custom_variables']['city']}")
         return
 
-    cid = args.campaign_id or create_campaign()
+    cid = args.campaign_id or create_campaign(args.campaign_name)
     print(f"[push] campaign {cid} (DRAFT — not activated)")
 
     marks, pushed, blocked = list(dup_marks), 0, 0

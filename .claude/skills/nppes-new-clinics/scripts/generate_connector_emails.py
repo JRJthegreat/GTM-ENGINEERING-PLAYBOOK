@@ -81,6 +81,15 @@ ACRONYMS = {"ABA", "ENT", "OB", "GYN", "OBGYN", "ER", "PT", "OT", "SLP", "MRI",
             "NE", "TLC", "VIP", "CNY", "NY", "LA", "SF", "UC"}
 
 
+def clean_first(name):
+    """Recipient first names are NOT nicknamed (Jude, 2026-08-18 — same call
+    as the production lane): a cold email renaming a stranger reads badly.
+    Only case is normalized (KAYLA -> Kayla). Company/city casualization is
+    unaffected."""
+    n = (name or "").strip()
+    return n.title() if n.isupper() or n.islower() else n
+
+
 def casual_first(name):
     n = (name or "").strip()
     return NICKNAMES.get(n.upper(), n.title() if n.isupper() or n.islower() else n)
@@ -204,7 +213,7 @@ VARIANT_B_GENERIC = VARIANT_B.replace("help {gtype} staff", "help growing groups
 # check: some subpart filings formalize sites that already operate).
 VARIANT_C = """Hi {first}
 
-Saw {company} registered several new locations{where}.
+Saw {company} registered {countphrase} new locations{where}.
 
 I have recruiters who help {gtype} staff new sites, and a couple have bandwidth right now. Figured this could be relevant with multiple openings at once.
 
@@ -300,18 +309,27 @@ def build_multi_bodies(values):
         r0 = rows[0]
         cities = sorted({casual_city(c(r, C_CITY)) for r in rows if c(r, C_CITY)})
         states = sorted({c(r, C_STATE) for r in rows if c(r, C_STATE)})
+        # Name cities up to three; past that the spelled-out site count carries
+        # the scale signal and a city list would read like a records dump
+        # (Jude, 2026-08-18).
+        SPELLED = {2: "two", 3: "three", 4: "four", 5: "five",
+                   6: "six", 7: "seven", 8: "eight", 9: "nine"}
+        countphrase = SPELLED.get(len(sites), "several")
         if len(cities) == 1:
             where = f" in {cities[0]}"
         elif len(cities) == 2:
-            where = f" across {cities[0]} and {cities[1]}"
+            where = f" in {cities[0]} and {cities[1]}"
+        elif len(cities) == 3:
+            where = f" in {cities[0]}, {cities[1]} and {cities[2]}"
         elif len(states) == 1:
             where = f" across {STATE_NAMES.get(states[0], states[0])}"
         else:
             where = ""
         gtype = Counter(phrases(c(r, C_TAX))[1] for r in rows).most_common(1)[0][0]
         tpl = VARIANT_C if gtype else VARIANT_C_GENERIC
-        out[em] = (tpl.format(first=casual_first(c(r0, C_FIRST)),
+        out[em] = (tpl.format(first=clean_first(c(r0, C_FIRST)),
                               company=brand_for(em, rows), where=where,
+                              countphrase=countphrase,
                               gtype=gtype or ""), len(sites))
     return out
 
@@ -319,7 +337,7 @@ def build_multi_bodies(values):
 def render(row_cells):
     def c(i):
         return row_cells[i].strip() if len(row_cells) > i and row_cells[i] else ""
-    first = casual_first(c(C_FIRST))
+    first = clean_first(c(C_FIRST))
     company = casual_company(c(C_COMPANY))
     city = casual_city(c(C_CITY))
     ptype, gtype, unit = phrases(c(C_TAX))

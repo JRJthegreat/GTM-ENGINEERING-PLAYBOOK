@@ -405,12 +405,17 @@ def google_deobfuscate(person, company, domain):
 # --- Stage 3b/3c: AMF ---
 
 def _domain_root(d):
-    """Bare second-level label, e.g. 'ralphs.com.au' -> 'ralphs'."""
+    """Registrable label, e.g. 'ralphs.com.au' -> 'ralphs'.
+
+    Takes the LAST label before the public suffix, not the first, so country
+    and regional subdomains resolve to the parent brand:
+    'australia.kilcoyglobalfoods.com' -> 'kilcoyglobalfoods'. Taking the first
+    label rejected five valid Kilcoy addresses on the first full run."""
     d = re.sub(r"^https?://", "", (d or "").strip().lower())
     d = re.sub(r"^www\.", "", d).split("/")[0]
     parts = [p for p in d.split(".") if p not in ("com", "net", "org", "au",
                                                   "co", "gov", "edu", "global")]
-    return parts[0] if parts else ""
+    return parts[-1] if parts else ""
 
 
 def amf_find(full_name, domain):

@@ -39,19 +39,31 @@ yes.
 4. In Instantly: Settings > Webhooks, add that URL for event
    **`lead_interested`**, scoped to the EMaaS campaign.
 
-## Before you trust it: pin the payload shape
+## What has actually been tested
 
-The field names Instantly sends on `lead_interested` are not published, so
-**Normalise payload** guesses defensively (`lead_email ?? email ?? lead.email`
-and so on). The workflow ships with a **Slack: raw payload (first run)** branch
-that posts the entire incoming payload to Slack.
+The payload contract is **not guessed**. Instantly sends a flat object and the
+repo already has a production handler running on it
+(`instantly-autoreply/scripts/instantly_autoreply.py`), which reads exactly:
 
-Leave that branch on for the first interested reply, read the real field names
-out of Slack, then pin them in **Normalise payload** and delete the branch.
-Until that has happened once, treat the mapping as unproven.
+    campaign_id, campaign_name, email_account, email_id,
+    lead_email, reply_subject, reply_text, reply_html
 
-A safe way to trigger it without waiting: mark any test lead in the campaign as
-Interested by hand. That fires the same event.
+It carries **no first name and no company**, which is why **Look up lead**
+exists. That call was tested live against the API: `POST /v2/leads/list` with
+`{search: <email>, limit: 1}` returns HTTP 200 and an item exposing
+`first_name`, `company_name`, `job_title` and a `payload` object holding the
+custom variables set at push time.
+
+The full chain was then simulated end to end against the live API with a real
+lead. It resolved `Suzanne` / `Powers Health` and produced a correctly formed
+`/emails/reply` body with Sherif in `cc_address_email_list`. Nothing was sent,
+because that step needs a genuine `reply_to_uuid` from a real inbound reply.
+
+Still unproven, and only provable once a real reply exists:
+  * that Instantly accepts the reply and honours the CC on a live thread
+  * the exact `lead_interested` event envelope (whether the fields above sit at
+    the top level or under a wrapper). The **Slack: raw payload (first run)**
+    branch prints whatever arrives, so the first firing settles it.
 
 ## Guards
 

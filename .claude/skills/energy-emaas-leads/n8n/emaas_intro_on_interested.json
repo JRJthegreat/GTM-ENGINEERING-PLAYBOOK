@@ -33,7 +33,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Instantly nests the useful fields differently per event type, so pull\n// them defensively rather than trusting one shape.\nconst cfg = $input.first().json;\nconst b = cfg.body ?? cfg;\n\nconst campaignId = b.campaign_id ?? b.campaignId ?? b.campaign?.id ?? '';\nconst email      = b.lead_email ?? b.email ?? b.lead?.email ?? '';\nconst first      = b.firstName ?? b.first_name ?? b.lead?.first_name ?? '';\nconst company    = b.companyName ?? b.company_name ?? b.lead?.company_name ?? '';\nconst eaccount   = b.email_account ?? b.eaccount ?? b.from_email ?? '';\nconst replyUuid  = b.email_id ?? b.reply_to_uuid ?? b.id ?? '';\nconst subject    = b.reply_subject ?? b.subject ?? '';\nconst replyText  = b.reply_text ?? b.reply_text_snippet ?? '';\nconst status     = String(b.lead_status ?? b.status ?? b.event_type ?? '').toLowerCase();\n\n// Site context comes from the custom variables we set at push time.\nconst cv   = b.custom_variables ?? b.payload ?? {};\nconst city = cv.site_city ?? '';\nconst state = cv.site_state ?? '';\nconst title = cv.dm_title ?? '';\n\nreturn [{ json: {\n  SHERIF_EMAIL: cfg.SHERIF_EMAIL,\n  EMAAS_CAMPAIGN_ID: cfg.EMAAS_CAMPAIGN_ID,\n  SLACK_WEBHOOK_URL: cfg.SLACK_WEBHOOK_URL,\n  campaignId, email, first, company, eaccount, replyUuid,\n  subject, replyText, status, city, state, title,\n  site: city ? ` (${city}${state ? ', ' + state : ''})` : ''\n}}];"
+        "jsCode": "// Field names are NOT guesses. They are the contract the repo's production\n// webhook handler already runs on (instantly-autoreply/scripts/\n// instantly_autoreply.py): the Instantly payload is FLAT and carries\n// campaign_id, campaign_name, email_account, email_id, lead_email,\n// reply_subject, reply_text, reply_html. It does NOT carry the lead's first\n// name or company, which is why the next node looks the lead up.\nconst cfg = $input.first().json;\nconst b = cfg.body ?? cfg;\n\nreturn [{ json: {\n  SHERIF_EMAIL:      cfg.SHERIF_EMAIL,\n  EMAAS_CAMPAIGN_ID: cfg.EMAAS_CAMPAIGN_ID,\n  SLACK_WEBHOOK_URL: cfg.SLACK_WEBHOOK_URL,\n  campaignId: b.campaign_id  || '',\n  email:      b.lead_email   || '',\n  eaccount:   b.email_account || '',\n  replyUuid:  b.email_id     || '',\n  subject:    b.reply_subject || '',\n  replyText:  b.reply_text   || ''\n}}];"
       },
       "id": "normalise",
       "name": "Normalise payload",
@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Fire-once guard. Instantly retries a failed delivery three times, and a\n// lead can be re-marked interested by hand, so without this the prospect can\n// receive the same introduction more than once.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.introduced = staticData.introduced || {};\n\nconst key = ($json.email || '').toLowerCase();\nif (!key) { return []; }\nif (staticData.introduced[key]) {\n  return [];            // already introduced, drop silently\n}\nstaticData.introduced[key] = new Date().toISOString();\n\nconst first = $json.first || 'there';\nconst company = $json.company || 'their site';\n\n// Connector framework: Jude is making an introduction, not delivering the\n// service. Sherif's credentials are attributed to Sherif. No sign-off, the\n// sending account signature carries identity.\nconst lines = [\n  `Hi ${first},`,\n  ``,\n  `Great. Putting you in touch with Sherif now, copied here.`,\n  ``,\n  `Sherif Hani runs Energy GreenPrint in Melbourne. He is a chartered electrical engineer with 20 years on industrial sites, and the energy audit is his. He will pick this up from here.`,\n  ``,\n  `Sherif, ${first} is at ${company}${$json.site}. Over to you.`\n];\n\nconst html = '<div>' + lines.join('<br />') + '</div>';\nreturn [{ json: { ...$json, introHtml: html, introText: lines.join('\\n') } }];"
+        "jsCode": "// Fire-once guard. Instantly retries a failed delivery three times and a lead\n// can be re-marked interested by hand, so without this a prospect can receive\n// the same introduction twice at exactly the wrong moment.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.introduced = staticData.introduced || {};\n\nconst ctx = $('Normalise payload').item.json;\nconst key = (ctx.email || '').toLowerCase();\nif (!key || staticData.introduced[key]) { return []; }\nstaticData.introduced[key] = new Date().toISOString();\n\n// /leads/list returns { items: [...] }; verified live against the API.\nconst lead = ($json.items && $json.items[0]) || {};\nconst pl   = lead.payload || {};\nconst first   = lead.first_name || pl.firstName || 'there';\nconst company = lead.company_name || pl.companyName || 'their site';\nconst title   = lead.job_title || pl.dm_title || '';\nconst city    = pl.site_city || '';\nconst state   = pl.site_state || '';\nconst site    = city ? ` (${city}${state ? ', ' + state : ''})` : '';\n\n// Connector framework: Jude introduces, Sherif's credentials are attributed\n// to Sherif, no sign-off because the sending account signature carries it.\nconst lines = [\n  `Hi ${first},`,\n  ``,\n  `Great. Putting you in touch with Sherif now, copied here.`,\n  ``,\n  `Sherif Hani runs Energy GreenPrint in Melbourne. He is a chartered electrical engineer with 20 years on industrial sites, and the energy audit is his. He will pick this up from here.`,\n  ``,\n  `Sherif, ${first} is at ${company}${site}. Over to you.`\n];\n\nreturn [{ json: { ...ctx, first, company, title,\n  introHtml: '<div>' + lines.join('<br />') + '</div>' } }];"
       },
       "id": "build-intro",
       "name": "Build intro (fire once)",
@@ -105,6 +105,32 @@
         200,
         220
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.instantly.ai/api/v2/leads/list",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ search: $json.email, limit: 1 }) }}",
+        "options": {}
+      },
+      "id": "lead-lookup",
+      "name": "Look up lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "INSTANTLY_BEARER",
+          "name": "Instantly API"
+        }
+      }
     },
     {
       "parameters": {
@@ -214,7 +240,7 @@
       "main": [
         [
           {
-            "node": "Build intro (fire once)",
+            "node": "Look up lead",
             "type": "main",
             "index": 0
           }
@@ -260,6 +286,17 @@
           },
           {
             "node": "Slack: raw payload (first run)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look up lead": {
+      "main": [
+        [
+          {
+            "node": "Build intro (fire once)",
             "type": "main",
             "index": 0
           }

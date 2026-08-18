@@ -1,0 +1,135 @@
+{
+  "name": "EMaaS - CC Sherif on Interested Reply",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "emaas-interested",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-in",
+      "name": "Instantly: lead_interested",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-460, 300],
+      "webhookId": "emaas-interested"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Instantly nests the useful fields differently per event type, so pull\n// them defensively rather than trusting one shape.\nconst b = $input.first().json.body ?? $input.first().json;\n\nconst campaignId = b.campaign_id ?? b.campaignId ?? b.campaign?.id ?? '';\nconst email      = b.lead_email ?? b.email ?? b.lead?.email ?? '';\nconst first      = b.firstName ?? b.first_name ?? b.lead?.first_name ?? '';\nconst company    = b.companyName ?? b.company_name ?? b.lead?.company_name ?? '';\nconst eaccount   = b.email_account ?? b.eaccount ?? b.from_email ?? '';\nconst replyUuid  = b.email_id ?? b.reply_to_uuid ?? b.id ?? '';\nconst subject    = b.reply_subject ?? b.subject ?? '';\nconst replyText  = b.reply_text ?? b.reply_text_snippet ?? '';\nconst status     = String(b.lead_status ?? b.status ?? b.event_type ?? '').toLowerCase();\n\n// Site context comes from the custom variables we set at push time.\nconst cv   = b.custom_variables ?? b.payload ?? {};\nconst city = cv.site_city ?? '';\nconst state = cv.site_state ?? '';\nconst title = cv.dm_title ?? '';\n\nreturn [{ json: {\n  campaignId, email, first, company, eaccount, replyUuid,\n  subject, replyText, status, city, state, title,\n  site: city ? ` (${city}${state ? ', ' + state : ''})` : ''\n}}];"
+      },
+      "id": "normalise",
+      "name": "Normalise payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": false, "version": 2},
+          "conditions": [
+            {
+              "id": "is-campaign",
+              "operator": {"type": "string", "operation": "equals"},
+              "leftValue": "={{ $json.campaignId }}",
+              "rightValue": "={{ $vars.EMAAS_CAMPAIGN_ID }}"
+            },
+            {
+              "id": "has-thread",
+              "operator": {"type": "string", "operation": "notEmpty"},
+              "leftValue": "={{ $json.replyUuid }}",
+              "rightValue": ""
+            },
+            {
+              "id": "has-account",
+              "operator": {"type": "string", "operation": "notEmpty"},
+              "leftValue": "={{ $json.eaccount }}",
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "guard",
+      "name": "Guard: this campaign + real thread",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-20, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fire-once guard. Instantly retries a failed delivery three times, and a\n// lead can be re-marked interested by hand, so without this the prospect can\n// receive the same introduction more than once.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.introduced = staticData.introduced || {};\n\nconst key = ($json.email || '').toLowerCase();\nif (!key) { return []; }\nif (staticData.introduced[key]) {\n  return [];            // already introduced, drop silently\n}\nstaticData.introduced[key] = new Date().toISOString();\n\nconst first = $json.first || 'there';\nconst company = $json.company || 'their site';\n\n// Connector framework: Jude is making an introduction, not delivering the\n// service. Sherif's credentials are attributed to Sherif. No sign-off, the\n// sending account signature carries identity.\nconst lines = [\n  `Hi ${first},`,\n  ``,\n  `Great. Putting you in touch with Sherif now, copied here.`,\n  ``,\n  `Sherif Hani runs Energy GreenPrint in Melbourne. He is a chartered electrical engineer with 20 years on industrial sites, and the energy audit is his. He will pick this up from here.`,\n  ``,\n  `Sherif, ${first} is at ${company}${$json.site}. Over to you.`\n];\n\nconst html = '<div>' + lines.join('<br />') + '</div>';\nreturn [{ json: { ...$json, introHtml: html, introText: lines.join('\\n') } }];"
+      },
+      "id": "build-intro",
+      "name": "Build intro (fire once)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.instantly.ai/api/v2/emails/reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  eaccount: $json.eaccount,\n  reply_to_uuid: $json.replyUuid,\n  subject: $json.subject,\n  cc_address_email_list: $vars.SHERIF_EMAIL,\n  body: { html: $json.introHtml }\n}) }}",
+        "options": {}
+      },
+      "id": "send-intro",
+      "name": "Reply + CC Sherif",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 220],
+      "credentials": {
+        "httpHeaderAuth": {"id": "INSTANTLY_BEARER", "name": "Instantly API"}
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `:handshake: *Intro made* — ${$('Build intro (fire once)').item.json.company}\\n${$('Build intro (fire once)').item.json.first} (${$('Build intro (fire once)').item.json.title || 'no title'}) <${$('Build intro (fire once)').item.json.email}>\\nSherif CC'd on the thread.\\n\\n_Their reply:_ ${($('Build intro (fire once)').item.json.replyText || '').slice(0, 300)}` }) }}",
+        "options": {}
+      },
+      "id": "notify",
+      "name": "Slack: intro made",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `:warning: EMaaS reply skipped (wrong campaign, missing thread id, or already introduced): ${$json.email || 'unknown'}` }) }}",
+        "options": {}
+      },
+      "id": "notify-skip",
+      "name": "Slack: skipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [200, 420]
+    }
+  ],
+  "connections": {
+    "Instantly: lead_interested": {"main": [[{"node": "Normalise payload", "type": "main", "index": 0}]]},
+    "Normalise payload": {"main": [[{"node": "Guard: this campaign + real thread", "type": "main", "index": 0}]]},
+    "Guard: this campaign + real thread": {"main": [
+      [{"node": "Build intro (fire once)", "type": "main", "index": 0}],
+      [{"node": "Slack: skipped", "type": "main", "index": 0}]
+    ]},
+    "Build intro (fire once)": {"main": [[{"node": "Reply + CC Sherif", "type": "main", "index": 0}]]},
+    "Reply + CC Sherif": {"main": [[{"node": "Slack: intro made", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "pinData": {}
+}

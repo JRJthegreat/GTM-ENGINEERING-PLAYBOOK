@@ -30,6 +30,12 @@ QUERIES = [
     '"new role" "Head of Marketing"',
     '"thrilled to share" "Chief Marketing Officer"',
     '"excited to share" "Director of Brand"',
+    '"excited to announce" "Chief Marketing Officer"',
+    '"new role" "VP of Brand"',
+    '"excited to share" "Head of Brand"',
+    '"joined" "as CMO"',
+    '"thrilled to announce" "VP of Marketing"',
+    '"starting a new position" "Head of Marketing"',
 ]
 JOIN_RE = re.compile(r"joining|joined|new role|new chapter|next chapter|"
                      r"excited to announce|thrilled to (share|announce)|"

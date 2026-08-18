@@ -70,7 +70,7 @@ def create_campaign(name=CAMPAIGN_NAME):
         }]},
         "sequences": [{"steps": [
             {"type": "email", "delay": 2, "delay_unit": "days", "pre_delay_unit": "days",
-             "variants": [{"subject": "Sanity check", "body": STEP1}]},
+             "variants": [{"subject": "{{firstName}}, sanity check", "body": STEP1}]},
             {"type": "email", "delay": 2, "delay_unit": "days", "pre_delay_unit": "days",
              "variants": [{"subject": "", "body": FU1}]},
             {"type": "email", "delay": 3, "delay_unit": "days", "pre_delay_unit": "days",

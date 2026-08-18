@@ -35,21 +35,37 @@ HEADERS = [
     "First Name", "Last Name", "Email Body", "Added to Instantly",
     "Signal Stack", "Indeed URL",
 ]
-WEIGHTS = {"ad_stale": 3.0, "video_job": 2.0, "new_exec": 2.0, "funding": 1.5}
-# Indeed keyword drift is real — a video_job signal only carries full weight
-# when the job title is actually a video/content role; otherwise it degrades
-# to weak evidence (0.5) that the company is hiring in marketing at all.
+WEIGHTS = {"ad_stale": 3.0, "new_exec": 2.0, "funding": 1.5}
+# video_job weight comes from filter_video_jobs.py's GPT-4.1 relevance verdict
+# (Jude's calibration, 2026-08-18): STRONG 2.0, WEAK 0.5, IRRELEVANT 0.
+# Unjudged signals fall back to the old title regex at WEAK strength.
+RELEVANCE_WEIGHT = {"STRONG": 2.0, "WEAK": 0.5, "IRRELEVANT": 0.0}
 VIDEO_TITLE_RE = re.compile(
     r"video|videograph|content|multimedia|creative|photo|social media|brand", re.I)
 
-def score_company(sig_types, video_titles):
+def video_job_weight(job_details):
+    best = 0.0
+    for d in job_details:
+        rel = d.get("relevance")
+        if rel:
+            best = max(best, RELEVANCE_WEIGHT.get(rel, 0.0))
+        elif VIDEO_TITLE_RE.search(d.get("job_title") or ""):
+            best = max(best, 0.5)
+    return best
+
+def score_company(sig_types, job_details):
     s = 0.0
+    counted_types = 0
     for t in sig_types:
         if t == "video_job":
-            s += 2.0 if any(VIDEO_TITLE_RE.search(x or "") for x in video_titles) else 0.5
+            w = video_job_weight(job_details)
+            s += w
+            if w > 0:
+                counted_types += 1
         else:
             s += WEIGHTS.get(t, 0)
-    return s + max(0, len(sig_types) - 1)
+            counted_types += 1
+    return s + max(0, counted_types - 1)
 
 def score_game(details):
     """Gaming lane: publisher money + trailer gap + a set date = window entered."""
@@ -97,17 +113,24 @@ def build_rows(con, include_exported, lane="brand"):
                        f"{g.get('steam_url','')}")
             out.append((sc, max((e for _, _, e in sigs if e), default=""), cid, row))
             continue
-        video_titles = [json.loads(d).get("job_title", "")
-                        for t, d, _ in sigs if t == "video_job"]
-        sc = score_company(types, video_titles)
+        job_details = [json.loads(d) for t, d, _ in sigs if t == "video_job"]
+        sc = score_company(types, job_details)
+        if sc <= 0:
+            continue
         newest = max((e for _, _, e in sigs if e), default="")
-        job = next((json.loads(d) for t, d, _ in sigs if t == "video_job"), None)
-        job_key = ""
-        if job:
-            hit = con.execute(
-                "SELECT key FROM signals WHERE company_id=? AND type='video_job'"
-                " ORDER BY event_date DESC LIMIT 1", (cid,)).fetchone()
-            job_key = hit[0] if hit else ""
+        job, job_key = None, ""
+        best_w = -1.0
+        for key, d, e in con.execute(
+                "SELECT key, detail, event_date FROM signals"
+                " WHERE company_id=? AND type='video_job'"
+                " ORDER BY event_date DESC", (cid,)):
+            dd = json.loads(d)
+            w = RELEVANCE_WEIGHT.get(dd.get("relevance", ""),
+                                     0.5 if VIDEO_TITLE_RE.search(dd.get("job_title") or "") else 0.0)
+            if w > best_w:
+                best_w, job, job_key = w, dd, key
+        if job is not None and best_w <= 0:
+            job, job_key = None, ""    # only irrelevant jobs — show none
         exec_d = next((json.loads(d) for t, d, _ in sigs if t == "new_exec"), None)
         fund = next((json.loads(d) for t, d, _ in sigs if t == "funding"), None)
 
@@ -115,7 +138,10 @@ def build_rows(con, include_exported, lane="brand"):
         for t, d, e in sigs:
             dd = json.loads(d)
             if t == "video_job":
-                stack_bits.append(f"video_job:{dd.get('job_title','')[:40]}")
+                if dd.get("relevance") == "IRRELEVANT":
+                    continue
+                rel_tag = f"[{dd['relevance']}]" if dd.get("relevance") else ""
+                stack_bits.append(f"video_job{rel_tag}:{dd.get('job_title','')[:40]}")
             elif t == "new_exec":
                 stack_bits.append(f"new_exec:{dd.get('person','')} ({dd.get('role','')[:30]})")
             elif t == "funding":

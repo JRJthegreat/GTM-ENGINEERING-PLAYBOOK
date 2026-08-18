@@ -30,6 +30,8 @@ the company so keyword-search strangers don't mis-attribute.
 
 ```
 collect_video_jobs.py → collect_new_execs.py → collect_formd.py   (any order)
+  → filter_video_jobs.py      (GPT-4.1 job-relevance judge — Jude's calibration:
+                               interns/UGC/content-creator = anti-signal, drift = out)
   → classify_companies.py     (mechanical prefilters + GPT-4.1; BRAND survives)
   → enrich_adlibrary.py       (BRAND rows only)
   → export_batch.py           (score+stack → 29-col sheet, delta-by-default)

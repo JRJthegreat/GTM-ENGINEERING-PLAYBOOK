@@ -12,39 +12,70 @@
       "name": "Instantly: lead_interested",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-460, 300],
+      "position": [
+        -460,
+        300
+      ],
       "webhookId": "emaas-interested"
     },
     {
       "parameters": {
-        "jsCode": "// Instantly nests the useful fields differently per event type, so pull\n// them defensively rather than trusting one shape.\nconst b = $input.first().json.body ?? $input.first().json;\n\nconst campaignId = b.campaign_id ?? b.campaignId ?? b.campaign?.id ?? '';\nconst email      = b.lead_email ?? b.email ?? b.lead?.email ?? '';\nconst first      = b.firstName ?? b.first_name ?? b.lead?.first_name ?? '';\nconst company    = b.companyName ?? b.company_name ?? b.lead?.company_name ?? '';\nconst eaccount   = b.email_account ?? b.eaccount ?? b.from_email ?? '';\nconst replyUuid  = b.email_id ?? b.reply_to_uuid ?? b.id ?? '';\nconst subject    = b.reply_subject ?? b.subject ?? '';\nconst replyText  = b.reply_text ?? b.reply_text_snippet ?? '';\nconst status     = String(b.lead_status ?? b.status ?? b.event_type ?? '').toLowerCase();\n\n// Site context comes from the custom variables we set at push time.\nconst cv   = b.custom_variables ?? b.payload ?? {};\nconst city = cv.site_city ?? '';\nconst state = cv.site_state ?? '';\nconst title = cv.dm_title ?? '';\n\nreturn [{ json: {\n  campaignId, email, first, company, eaccount, replyUuid,\n  subject, replyText, status, city, state, title,\n  site: city ? ` (${city}${state ? ', ' + state : ''})` : ''\n}}];"
+        "jsCode": "// Config lives here as a node, NOT in n8n Variables ($vars): Variables are a\n// licensed feature, and on community n8n they resolve to undefined silently,\n// which would send the introduction with an empty CC and still look like a\n// success. Edit these three values after import.\nreturn $input.all().map(i => ({ json: { ...i.json,\n  SHERIF_EMAIL:      'sherif.hani@energygreenprint.net.au',\n  EMAAS_CAMPAIGN_ID: 'PASTE_CAMPAIGN_ID_HERE',\n  SLACK_WEBHOOK_URL: 'PASTE_SLACK_WEBHOOK_HERE',\n  DEBUG_RAW:         true      // first run: post the raw payload to Slack so\n                               // the real field names can be pinned down\n}}));"
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Instantly nests the useful fields differently per event type, so pull\n// them defensively rather than trusting one shape.\nconst cfg = $input.first().json;\nconst b = cfg.body ?? cfg;\n\nconst campaignId = b.campaign_id ?? b.campaignId ?? b.campaign?.id ?? '';\nconst email      = b.lead_email ?? b.email ?? b.lead?.email ?? '';\nconst first      = b.firstName ?? b.first_name ?? b.lead?.first_name ?? '';\nconst company    = b.companyName ?? b.company_name ?? b.lead?.company_name ?? '';\nconst eaccount   = b.email_account ?? b.eaccount ?? b.from_email ?? '';\nconst replyUuid  = b.email_id ?? b.reply_to_uuid ?? b.id ?? '';\nconst subject    = b.reply_subject ?? b.subject ?? '';\nconst replyText  = b.reply_text ?? b.reply_text_snippet ?? '';\nconst status     = String(b.lead_status ?? b.status ?? b.event_type ?? '').toLowerCase();\n\n// Site context comes from the custom variables we set at push time.\nconst cv   = b.custom_variables ?? b.payload ?? {};\nconst city = cv.site_city ?? '';\nconst state = cv.site_state ?? '';\nconst title = cv.dm_title ?? '';\n\nreturn [{ json: {\n  SHERIF_EMAIL: cfg.SHERIF_EMAIL,\n  EMAAS_CAMPAIGN_ID: cfg.EMAAS_CAMPAIGN_ID,\n  SLACK_WEBHOOK_URL: cfg.SLACK_WEBHOOK_URL,\n  campaignId, email, first, company, eaccount, replyUuid,\n  subject, replyText, status, city, state, title,\n  site: city ? ` (${city}${state ? ', ' + state : ''})` : ''\n}}];"
       },
       "id": "normalise",
       "name": "Normalise payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-240, 300]
+      "position": [
+        -240,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": false, "version": 2},
+          "options": {
+            "caseSensitive": false,
+            "version": 2
+          },
           "conditions": [
             {
               "id": "is-campaign",
-              "operator": {"type": "string", "operation": "equals"},
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
               "leftValue": "={{ $json.campaignId }}",
-              "rightValue": "={{ $vars.EMAAS_CAMPAIGN_ID }}"
+              "rightValue": "={{ $json.EMAAS_CAMPAIGN_ID }}"
             },
             {
               "id": "has-thread",
-              "operator": {"type": "string", "operation": "notEmpty"},
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
               "leftValue": "={{ $json.replyUuid }}",
               "rightValue": ""
             },
             {
               "id": "has-account",
-              "operator": {"type": "string", "operation": "notEmpty"},
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
               "leftValue": "={{ $json.eaccount }}",
               "rightValue": ""
             }
@@ -57,7 +88,10 @@
       "name": "Guard: this campaign + real thread",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [-20, 300]
+      "position": [
+        -20,
+        300
+      ]
     },
     {
       "parameters": {
@@ -67,7 +101,10 @@
       "name": "Build intro (fire once)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [200, 220]
+      "position": [
+        200,
+        220
+      ]
     },
     {
       "parameters": {
@@ -77,37 +114,46 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  eaccount: $json.eaccount,\n  reply_to_uuid: $json.replyUuid,\n  subject: $json.subject,\n  cc_address_email_list: $vars.SHERIF_EMAIL,\n  body: { html: $json.introHtml }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  eaccount: $json.eaccount,\n  reply_to_uuid: $json.replyUuid,\n  subject: $json.subject,\n  cc_address_email_list: $json.SHERIF_EMAIL,\n  body: { html: $json.introHtml }\n}) }}",
         "options": {}
       },
       "id": "send-intro",
       "name": "Reply + CC Sherif",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [420, 220],
+      "position": [
+        420,
+        220
+      ],
       "credentials": {
-        "httpHeaderAuth": {"id": "INSTANTLY_BEARER", "name": "Instantly API"}
+        "httpHeaderAuth": {
+          "id": "INSTANTLY_BEARER",
+          "name": "Instantly API"
+        }
       }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "url": "={{ $json.SLACK_WEBHOOK_URL }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ text: `:handshake: *Intro made* — ${$('Build intro (fire once)').item.json.company}\\n${$('Build intro (fire once)').item.json.first} (${$('Build intro (fire once)').item.json.title || 'no title'}) <${$('Build intro (fire once)').item.json.email}>\\nSherif CC'd on the thread.\\n\\n_Their reply:_ ${($('Build intro (fire once)').item.json.replyText || '').slice(0, 300)}` }) }}",
+        "jsonBody": "={{ JSON.stringify({ text: `:handshake: *Intro made* \u2014 ${$('Build intro (fire once)').item.json.company}\\n${$('Build intro (fire once)').item.json.first} (${$('Build intro (fire once)').item.json.title || 'no title'}) <${$('Build intro (fire once)').item.json.email}>\\nSherif CC'd on the thread.\\n\\n_Their reply:_ ${($('Build intro (fire once)').item.json.replyText || '').slice(0, 300)}` }) }}",
         "options": {}
       },
       "id": "notify",
       "name": "Slack: intro made",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [640, 220]
+      "position": [
+        640,
+        220
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "url": "={{ $json.SLACK_WEBHOOK_URL }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ text: `:warning: EMaaS reply skipped (wrong campaign, missing thread id, or already introduced): ${$json.email || 'unknown'}` }) }}",
@@ -117,19 +163,112 @@
       "name": "Slack: skipped",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [200, 420]
+      "position": [
+        200,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '```EMaaS raw webhook payload:\\n' + JSON.stringify($('Instantly: lead_interested').item.json, null, 2).slice(0, 2500) + '```' }) }}",
+        "options": {}
+      },
+      "id": "raw-dump",
+      "name": "Slack: raw payload (first run)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        480
+      ]
     }
   ],
   "connections": {
-    "Instantly: lead_interested": {"main": [[{"node": "Normalise payload", "type": "main", "index": 0}]]},
-    "Normalise payload": {"main": [[{"node": "Guard: this campaign + real thread", "type": "main", "index": 0}]]},
-    "Guard: this campaign + real thread": {"main": [
-      [{"node": "Build intro (fire once)", "type": "main", "index": 0}],
-      [{"node": "Slack: skipped", "type": "main", "index": 0}]
-    ]},
-    "Build intro (fire once)": {"main": [[{"node": "Reply + CC Sherif", "type": "main", "index": 0}]]},
-    "Reply + CC Sherif": {"main": [[{"node": "Slack: intro made", "type": "main", "index": 0}]]}
+    "Instantly: lead_interested": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise payload": {
+      "main": [
+        [
+          {
+            "node": "Guard: this campaign + real thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: this campaign + real thread": {
+      "main": [
+        [
+          {
+            "node": "Build intro (fire once)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build intro (fire once)": {
+      "main": [
+        [
+          {
+            "node": "Reply + CC Sherif",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply + CC Sherif": {
+      "main": [
+        [
+          {
+            "node": "Slack: intro made",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Normalise payload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack: raw payload (first run)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {}
 }

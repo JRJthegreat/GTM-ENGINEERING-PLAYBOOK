@@ -26,15 +26,32 @@ yes.
 
 ## Setup
 
-1. **n8n variables** (Settings > Variables):
-   - `EMAAS_CAMPAIGN_ID` — the Instantly campaign id
+1. Open the **Config** node and set three values. They live in a node rather
+   than in n8n Variables on purpose: Variables are a licensed feature, and on
+   community n8n `$vars` resolves to undefined silently, which would send the
+   introduction with an empty CC and still report success.
    - `SHERIF_EMAIL` — `sherif.hani@energygreenprint.net.au`
+   - `EMAAS_CAMPAIGN_ID` — the Instantly campaign id
    - `SLACK_WEBHOOK_URL` — incoming webhook for the client channel
 2. **Credential** `Instantly API`, type *Header Auth*:
    name `Authorization`, value `Bearer <INSTANTLY_API_KEY>`
 3. Activate the workflow, copy the production webhook URL.
 4. In Instantly: Settings > Webhooks, add that URL for event
    **`lead_interested`**, scoped to the EMaaS campaign.
+
+## Before you trust it: pin the payload shape
+
+The field names Instantly sends on `lead_interested` are not published, so
+**Normalise payload** guesses defensively (`lead_email ?? email ?? lead.email`
+and so on). The workflow ships with a **Slack: raw payload (first run)** branch
+that posts the entire incoming payload to Slack.
+
+Leave that branch on for the first interested reply, read the real field names
+out of Slack, then pin them in **Normalise payload** and delete the branch.
+Until that has happened once, treat the mapping as unproven.
+
+A safe way to trigger it without waiting: mark any test lead in the campaign as
+Interested by hand. That fires the same event.
 
 ## Guards
 

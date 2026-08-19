@@ -16,8 +16,10 @@ First run: sheet **"Healthcare US - Aug 19th"**
 
 | Lane | Working tab | Jobs | Companies |
 |---|---|---|---|
-| Speech Language Pathologist | `SLP Campaign` | 274 | 87 |
-| General Healthcare | `General Campaign` | 1,998 | 426 |
+| Speech Language Pathologist | `SLP Campaign` | 256 | 83 |
+| General Healthcare | `General Campaign` | 1,810 | 418 |
+
+(2,272 rows after phase 1; 206 removed at the screen — see below.)
 
 ## Why this platform is different
 
@@ -80,6 +82,7 @@ recovering the real employer — `gmh.wd12.myworkdayjobs.com`,
 | 3a | `collect_classification.py` | Mechanical: flag companies worth a second look. No spend. |
 | 3b | *Claude judges in-session* | Hand-write `data/class_verdicts.json`. |
 | 3c | `apply_classification.py` | Write col AV under a hallucination guard. Deletes nothing. |
+| 3d | `delete_rows.py` | Remove rows by status/company. Backs up every row first. `--apply` required. |
 | 4+ | not built | DM discovery, copy, push. |
 
 ### Dedupe: per JOB, never per company (Jude, 2026-08-19)
@@ -122,8 +125,23 @@ re-classification. Only companies tripping a suspicion signal reach the judge:
 `DROP_NOT_EMPLOYER`, `REVIEW_PROFILE_MISMATCH`.
 
 Result: 399 KEEP, 64 REVIEW_PROFILE_MISMATCH, 3 DROP_AGENCY, 2
-DROP_NOT_EMPLOYER. **No rows were deleted** — removing `DROP_*` rows is a
-separate, explicit call.
+DROP_NOT_EMPLOYER.
+
+**206 rows removed on 2026-08-19** (Jude's go-ahead), backed up to
+`data/deleted_rows_*.json`:
+
+| Removed | Rows | Why |
+|---|---|---|
+| InHome Therapy, Akicita Federal, Akahi Associates | 63 | staffing firms — competitors, not buyers |
+| NHA, Hippocratic AI | 15 | not employers (certification vendor; AI-evaluator role) |
+| "Intermountain Ventures" | 100 | ATS tenant `imh` — really Intermountain Health, ~68k staff, far over the 500 cap |
+| "Elas" | 22 | ATS tenant `denverhealth` — really Denver Health, ~7k staff |
+| "TSFD Limited" | 6 | ATS tenant `tysonfoods` — an occupational-health RN at a meat plant |
+
+The last three were unmasked by the ATS tenant, not by their (wrong) profile.
+The remaining 221 mismatch rows were deliberately KEPT: their postings are real
+clinical demand and the employer is recoverable from col AR. They stay flagged
+so nothing emails them by mistake.
 
 > **Downstream must require `AV == KEEP`.** The 64 mismatch companies (349
 > rows) carry another company's domain; enriching them emails the wrong org.

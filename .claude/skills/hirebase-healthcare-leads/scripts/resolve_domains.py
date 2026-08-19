@@ -85,6 +85,12 @@ JUNK_HOST_RE = re.compile(
     r"greenhouse\.io|lever\.co|workday|paylocity|bamboohr|jazzhr|smartrecruiters|"
     r"myworkdayjobs|icims\.com|oraclecloud\.com|adp\.com|paycom|ukg\.|"
     r"rippling\.com|workable\.com|breezy\.hr|recruitee\.com|ashbyhq\.com|"
+    # link-in-bio hosts. A practice that lists linktr.ee as its "website"
+    # resolves to Linktree, and AMF then returns LINKTREE'S OWN STAFF --
+    # alex@linktr.ee was about to be emailed as the decision maker at five
+    # different healthcare organisations (2026-08-20).
+    r"linktr\.ee|bio\.link|beacons\.ai|linkin\.bio|carrd\.co|taplink\.|"
+    r"lnk\.bio|solo\.to|campsite\.bio|milkshake\.app|"
     r"givelively\.org|donorbox\.org|classy\.org|gofundme\.com|"
     r"networkforgood|paypal\.com|givebutter\.com|"
     r"bit\.ly|goo\.gl|google\.com|wix\.com|squarespace\.com|weebly\.com)",

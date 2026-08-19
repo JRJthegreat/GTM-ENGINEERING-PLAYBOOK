@@ -67,6 +67,7 @@ COL_TITLE, COL_COMPANY, COL_CITY = 1, 10, 17
 COL_FIRST, COL_BODY = 23, 25
 COL_DM_NAME = 19
 COL_STATUS, COL_SEGMENT = 47, 48
+COL_PUSH = 53   # BB — which lane owns the single send
 BATCH = 10
 
 # JUDE'S COPY, VERBATIM (2026-08-19). Only {first} / {role} / {role_plural} /
@@ -305,7 +306,9 @@ def write(svc, sid, data, tries=4):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet_url", required=True)
-    ap.add_argument("--tab", required=True)
+    ap.add_argument("--tabs", nargs="+", required=True,
+                    help="ALL lane tabs at once. A company in both lanes must "
+                         "be aggregated across them or it gets two emails.")
     ap.add_argument("--preview", type=int, default=0)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--regenerate", action="store_true")
@@ -318,26 +321,28 @@ def main():
     svc = build("sheets", "v4",
                 credentials=Credentials.from_authorized_user_file(TOKEN_PATH))
     sid = sheet_id_of(args.sheet_url)
-    vals = svc.spreadsheets().values().get(
-        spreadsheetId=sid, range=f"'{args.tab}'!A1:BA").execute().get("values", [])
-    rows = vals[1:]
+    raw, bycomp = {}, {}
+    for tab in args.tabs:
+        vals = svc.spreadsheets().values().get(
+            spreadsheetId=sid, range=f"'{tab}'!A1:BA").execute().get("values", [])
+        raw[tab] = vals[1:]
+        for i, r in enumerate(raw[tab]):
+            def c(x, _r=r):
+                return _r[x].strip() if x < len(_r) else ""
+            if c(COL_STATUS) != "KEEP" or not c(COL_COMPANY):
+                continue
+            d = bycomp.setdefault(c(COL_COMPANY),
+                                  {"titles": [], "rows": {}, "first": "",
+                                   "full": "", "cities": [],
+                                   "seg": c(COL_SEGMENT)})
+            d["titles"].append(c(COL_TITLE))
+            d["cities"].append(c(COL_CITY))
+            d["rows"].setdefault(tab, []).append(i)
+            d["first"] = d["first"] or c(COL_FIRST)
+            d["full"] = d["full"] or c(COL_DM_NAME)
 
     def c(r, i):
         return r[i].strip() if i < len(r) else ""
-
-    bycomp = {}
-    for i, r in enumerate(rows):
-        if c(r, COL_STATUS) != "KEEP" or not c(r, COL_COMPANY):
-            continue
-        d = bycomp.setdefault(c(r, COL_COMPANY),
-                              {"titles": [], "rows": [], "first": "",
-                               "full": "", "cities": [],
-                               "seg": c(r, COL_SEGMENT)})
-        d["titles"].append(c(r, COL_TITLE))
-        d["cities"].append(c(r, COL_CITY))
-        d["rows"].append(i)
-        d["first"] = d["first"] or c(r, COL_FIRST)
-        d["full"] = d["full"] or c(r, COL_DM_NAME)
 
     made, skipped_norole, skipped_noname = {}, [], []
     fixed_first = {}
@@ -383,7 +388,7 @@ def main():
         if first and first != d["first"]:
             fixed_first[name] = first
 
-    print(f"[{args.tab}] {len(bycomp)} companies")
+    print(f"[{', '.join(args.tabs)}] {len(bycomp)} unique companies")
     print(f"  bodies rendered      : {len(made)}")
     print(f"  no clinical role     : {len(skipped_norole)}  {skipped_norole[:4]}")
     print(f"  awaiting a DM name   : {len(skipped_noname)}")
@@ -403,7 +408,9 @@ def main():
                     break
                 seen.add(name)
                 shown += 1
-                print(f"\n--- {name}  ({len(d['rows'])} openings) ---")
+                nop = sum(len(v) for v in d["rows"].values())
+                lanes = "+".join(t.split()[0] for t in d["rows"])
+                print(f"\n--- {name}  ({nop} openings, {lanes}) ---")
                 print(made[name])
             shown = 0
         return
@@ -412,21 +419,42 @@ def main():
         print("\n  (no --apply and no --preview — nothing written)")
         return
 
+    # A company in BOTH lanes must be emailed ONCE, not once per lane
+    # (Jude, 2026-08-20). The body above is already built from the UNION of
+    # its roles across lanes, so the single email names everything it is
+    # hiring for. The lane with more openings owns the push; the other lane's
+    # rows carry the same body but are marked DUP so the push skips them.
+    owner = {}
+    for name, d in bycomp.items():
+        owner[name] = max(d["rows"], key=lambda t: len(d["rows"][t]))
+    dual = [n for n, d in bycomp.items() if len(d["rows"]) > 1 and n in made]
+    print(f"  companies in BOTH lanes, merged to one email: {len(dual)}")
+    for n in dual[:5]:
+        print(f"     {n[:34]:34s} -> push from {owner[n]!r}")
+
     if fixed_first:
         print(f"  first names healed for the subject line: {len(fixed_first)} "
               f"{list(fixed_first.items())[:3]}")
+    for tab in args.tabs:
+        write(svc, sid, [{"range": f"'{tab}'!{a1(COL_PUSH, 1)}",
+                          "values": [["push_owner"]]}])
     pending, n = [], 0
     for name, body in made.items():
         if "{first}" in body:
             continue                      # never write "Hi {first},"
-        for ri in bycomp[name]["rows"]:
-            if name in fixed_first:
-                pending.append({"range": f"'{args.tab}'!{a1(COL_FIRST, ri + 2)}",
-                                "values": [[fixed_first[name]]]})
-            if c(rows[ri], COL_BODY) and not args.regenerate:
-                continue
-            pending.append({"range": f"'{args.tab}'!{a1(COL_BODY, ri + 2)}",
-                            "values": [[body]]})
+        d = bycomp[name]
+        for tab, idxs in d["rows"].items():
+            mark = "YES" if tab == owner[name] else "DUP"
+            for ri in idxs:
+                if name in fixed_first:
+                    pending.append({"range": f"'{tab}'!{a1(COL_FIRST, ri + 2)}",
+                                    "values": [[fixed_first[name]]]})
+                pending.append({"range": f"'{tab}'!{a1(COL_PUSH, ri + 2)}",
+                                "values": [[mark]]})
+                if c(raw[tab][ri], COL_BODY) and not args.regenerate:
+                    continue
+                pending.append({"range": f"'{tab}'!{a1(COL_BODY, ri + 2)}",
+                                "values": [[body]]})
         n += 1
         if n % BATCH == 0 and pending:
             write(svc, sid, pending)
@@ -434,7 +462,7 @@ def main():
             pending = []
     if pending:
         write(svc, sid, pending)
-    print(f"  done — {n} companies")
+    print(f"  done — {n} companies, one email each")
 
 
 if __name__ == "__main__":

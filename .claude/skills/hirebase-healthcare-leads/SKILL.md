@@ -117,7 +117,10 @@ corrected NAME and fall to `needs_search`.
 | 3e | `collect_identity_recovery.py` | Recover the REAL employer behind mismatch rows. Free. |
 | 3f | *Claude judges* → `apply_identity_recovery.py` | Rewrite name/website under a **proof-on-page gate**. |
 | 3g | `assign_segments.py` | Segment, size band and DM target per company. Free. |
-| 4+ | not built | DM discovery, copy, push. |
+| 4 | `build_dm_worklist.py` → **apollo-dm-waterfall** → `sync_dm_results.py` | DM discovery, one row per COMPANY. |
+| 4b | `rescue_dm_amf.py` → `rescue_dm_pm.py` | AMF /decision-maker (CEO only) then Purple Magic. |
+| 5 | `generate_bodies.py --tabs <both>` | Copy. APPROVAL GATE. Merges lanes so a company gets ONE email. |
+| 6 | `push_campaign.py` | DRAFT Instantly campaign, one lead per company. |
 
 ### Dedupe: per JOB, never per company (Jude, 2026-08-19)
 
@@ -281,6 +284,45 @@ python3 -W ignore scripts/collect_classification.py --sheet_url "$U" \
 python3 -W ignore scripts/apply_classification.py --sheet_url "$U" \
   --tabs "SLP Campaign" "General Campaign" --apply
 ```
+
+## DM discovery (Aug 2026 run)
+
+`apollo-dm-waterfall` queues per SHEET ROW with no company dedupe, so pointing
+it at a lane tab would enrich Compassus 380 times. `build_dm_worklist.py`
+collapses KEEP rows to one per company first — 1,499 lookups saved — and
+`sync_dm_results.py` fans the answers back out.
+
+| Lane | Found | Note |
+|---|---|---|
+| Apollo waterfall | 248 | ~235 AMF credits, 58% hit |
+| `rescue_dm_amf.py` (CEO only) | 75 | 146 credits, 42% of the misses |
+| `rescue_dm_pm.py` (Purple Magic) | 7 | of 104; 67 were `pm_bad_title` |
+| **Total** | **330 / 427 (77%)** | |
+
+The shared companions do NOT cover this lane: `amf_dm_fallback.py` targets only
+`not_found`, `amf_ceo_rescue.py` only `no_apollo_people` AND only TINY rows, and
+`no_dm_candidates` — the largest bucket at 127 — is untouched by both.
+`amf_ceo_then_ops.py` reaches them but falls back to `operations`, which replied
+0/87; hence the CEO-only clone.
+
+## Live campaigns (DRAFT, 2026-08-20)
+
+| Campaign | ID | Leads |
+|---|---|---|
+| HireBase SLP - Aug 2026 | `8e6cbb7c-c13b-4536-9be7-f8ba607e9558` | 44 |
+| HireBase General Healthcare - Aug 2026 | `92be979f-8be8-4f05-89b9-b78f6b32fb0c` | 280 |
+
+324 leads, **324 distinct inboxes** — no one receives two emails. No sending
+accounts attached; Jude wires mailboxes and activates.
+
+Sequence: day 0/+2/+3/+4, blank subjects on 2-4 so they thread. Subject is
+`{{firstName}}, still hiring?`. Step 3 carries the historical placement story,
+because Jude's short opener dropped the identity line and proof that made
+Florida's bumps work.
+
+⚠️ **Custom variables persist merged FLAT into `payload`**, not under
+`payload.custom_variables`. A GET that looks in the nested place reports them
+missing when they are fine. Verify with a fresh GET, never the write response.
 
 ## Notes
 

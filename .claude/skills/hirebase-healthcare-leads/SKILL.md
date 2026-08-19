@@ -305,7 +305,7 @@ The shared companions do NOT cover this lane: `amf_dm_fallback.py` targets only
 `amf_ceo_then_ops.py` reaches them but falls back to `operations`, which replied
 0/87; hence the CEO-only clone.
 
-## Live campaigns (DRAFT, 2026-08-20)
+## Live campaigns — ⚠️ ACTIVE, DO NOT MODIFY (2026-08-20)
 
 | Campaign | ID | Leads |
 |---|---|---|
@@ -314,13 +314,20 @@ The shared companions do NOT cover this lane: `amf_dm_fallback.py` targets only
 
 324 leads, **324 distinct inboxes** — no one receives two emails.
 
+⚠️ **Both campaigns are ACTIVE as of 2026-08-20.** The repo's standing rule
+applies: never change an active campaign's sequence, leads or copy, or the
+sheet rows feeding it, without Jude's explicit instruction.
+
 **Mailboxes are attached BY TAG at create time** (Jude, 2026-08-20 — this
-reverses the older "never attach" default). Four workspace tags plus
+reverses the older "never attach" default). FIVE workspace tags plus
 `match_lead_esp: true` and an ORDERED `provider_routing_rules` list whose
 catch-all `all -> google` comes FIRST. Both values live at the top of
-`push_campaign.py`; they differ from `push_florida_demand.py` (two tags added,
-Zapmail dropped, different rule order), so copy from here. Campaigns are still
-created as DRAFTs and Jude activates them.
+`push_campaign.py`. Instantly exposes **no tags endpoint**, so the way to
+confirm a tag ID is to see which campaigns already use it
+(`GET /campaigns` → `email_tag_list`), not to copy an older script.
+
+Attaching mailboxes moves a campaign from status 0 (draft) to 2 (paused); it
+is NOT active until `POST /campaigns/{id}/activate`.
 
 Sequence: day 0/+2/+3/+4, blank subjects on 2-4 so they thread. Subject is
 `{{firstName}}, still hiring?`. Step 3 carries the historical placement story,

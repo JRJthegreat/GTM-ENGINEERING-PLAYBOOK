@@ -91,14 +91,15 @@ STEP4 = ("<div>Hi {{firstName}},<br /><br />"
 # the older "never attach sending accounts" default for this lane — he wants
 # the tags applied at create time rather than fixed by hand afterwards.
 #
-# Tag IDs are workspace-level and stable. This set is NOT the same as the one
-# in push_florida_demand.py: Jude added two tags and dropped Zapmail, so copy
-# from here, not from the Florida script.
+# Tag IDs are workspace-level. Instantly exposes no tags endpoint, so the way
+# to confirm one is to look at which campaigns already use it
+# (GET /campaigns -> email_tag_list) rather than trusting an old script.
 EMAIL_TAG_LIST = [
     "2b2adf27-cf48-4ed1-bcb4-513ecb49f719",
     "d221f400-cd05-4ca0-bf28-c5194227f701",   # ScaledMail-Google
     "d00f89d5-9a82-4602-8614-64a172de6424",   # ScaledMail-Microsoft
     "ce2014e8-b42f-415e-b5f3-c185093f2042",
+    "ba2df4e6-a8a7-412d-833e-b6b48c5e12da",   # Zapmail (Jude, 2026-08-20)
 ]
 
 # ORDER MATTERS — these are evaluated as precedence rules, and Jude's order

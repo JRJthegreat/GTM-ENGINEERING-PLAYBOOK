@@ -63,17 +63,41 @@ from googleapiclient.discovery import build
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_PATH = os.path.join(SCRIPT_DIR, "..", "..", "..", "token.json")
 
-COL_TITLE, COL_COMPANY = 1, 10
+COL_TITLE, COL_COMPANY, COL_CITY = 1, 10, 17
 COL_FIRST, COL_BODY = 23, 25
 COL_STATUS, COL_SEGMENT = 47, 48
 BATCH = 10
 
-TEMPLATE = """Hi {first},
+# JUDE'S COPY, VERBATIM (2026-08-19). Only {first} / {role} / {role_plural} /
+# {city} vary. Rebuilt from the proven Texas+Florida connector copy after the
+# short "few candidates" draft was rejected — employers have heard "recruiter
+# with candidates" so often they discount it on sight, and it is the bench
+# claim the Florida generator already bans. What replaced it is a CAPABILITY
+# claim plus risk reversal ("contingent, nothing owed unless the hire sticks"),
+# which survives "send them over".
+#
+# ANCHORS ON ONE ROLE. The opener names a single role, so the awkward
+# three-discipline sentence never has to exist. A company's dominant
+# discipline (most live openings) wins; the rest inform priority, not copy.
+#
+# GEOGRAPHY-FREE, like Florida and unlike Texas ("a clinic here in Texas").
+# This list spans 49 states, so any state-specific claim would be false in
+# most inboxes.
+BODY = """Hi {first},
 
-Are you hiring for {roles}?
-I know someone with a few candidates looking for new roles.
+Is the {role} role{in_city} still open?
 
-Can I connect you?"""
+I know a recruiter who specialises in placing {role_plural}. He only works on contingent, so nothing is owed unless the hire sticks.
+
+If this hire is a priority right now, I'd be glad to make an intro."""
+
+# Jude wrote "Best, Jude" inline at the end. It is NOT in BODY: the Instantly
+# sequence already appends "Best,{{sendingAccountFirstName}}" + "Sent from my
+# iPhone" to step 1, which on the Florida campaign rendered as "Rood" — so
+# putting it here signs every email twice, under two different names. Pass
+# --signoff to include it anyway, and then strip the signature from the
+# sequence at push time instead.
+SIGNOFF = "\n\nBest,\nJude"
 
 # (regex, singular-with-article, plural). Order matters: a more specific
 # family must precede one that would otherwise swallow it.
@@ -83,37 +107,37 @@ FAMILIES = [
     # "Speech and Language Pathologist" is a common variant and must match:
     # without the optional "and" it fell through as a non-clinical posting.
     (r"speech[\s\-]*(and[\s\-]*)?language|speech patholog|speech therap|"
-     r"\bslpa?\b", "a Speech Language Pathologist",
-     "Speech Language Pathologists"),
+     r"\bslpa?\b", "a speech language pathologist",
+     "speech language pathologists"),
     (r"occupational therap|\bcota\b|\bota\b",
-     "an Occupational Therapist", "Occupational Therapists"),
-    (r"physical therap|\bpta\b", "a Physical Therapist", "Physical Therapists"),
+     "an occupational therapist", "occupational therapists"),
+    (r"physical therap|\bpta\b", "a physical therapist", "physical therapists"),
     (r"nurse practitioner|\bnp\b|pmhnp|\bfnp\b|\baprn\b|advanced practice",
-     "a Nurse Practitioner", "Nurse Practitioners"),
-    (r"physician assistant|\bpa-?c\b", "a Physician Assistant",
-     "Physician Assistants"),
+     "a nurse practitioner", "nurse practitioners"),
+    (r"physician assistant|\bpa-?c\b", "a physician assistant",
+     "physician assistants"),
     (r"licensed practical nurse|licensed vocational nurse|\blpn\b|\blvn\b",
      "an LPN", "LPNs"),
     (r"certified nursing assistant|\bcna\b|nursing assistant",
      "a CNA", "CNAs"),
     (r"registered nurse|\brn\b|charge nurse|staff nurse",
-     "a Registered Nurse", "Registered Nurses"),
+     "a registered nurse", "registered nurses"),
     (r"social worker|\blcsw\b|\bmsw\b|\blmsw\b",
-     "a Social Worker", "Social Workers"),
-    (r"sonograph|ultrasound", "a Sonographer", "Sonographers"),
+     "a social worker", "social workers"),
+    (r"sonograph|ultrasound", "a sonographer", "sonographers"),
     (r"radiolog|rad tech|\bct tech|\bmri tech|x-?ray tech",
-     "a Radiologic Technologist", "Radiologic Technologists"),
-    (r"respiratory therap", "a Respiratory Therapist", "Respiratory Therapists"),
-    (r"pharmacist", "a Pharmacist", "Pharmacists"),
-    (r"medical assistant|\bcma\b", "a Medical Assistant", "Medical Assistants"),
-    (r"dietit|nutritionist", "a Dietitian", "Dietitians"),
-    (r"psychologist", "a Psychologist", "Psychologists"),
+     "a radiologic technologist", "radiologic technologists"),
+    (r"respiratory therap", "a respiratory therapist", "respiratory therapists"),
+    (r"pharmacist", "a pharmacist", "pharmacists"),
+    (r"medical assistant|\bcma\b", "a medical assistant", "medical assistants"),
+    (r"dietit|nutritionist", "a dietitian", "dietitians"),
+    (r"psychologist", "a psychologist", "psychologists"),
     (r"counselor|\blpc\b|mental health therap",
-     "a Counselor", "Counselors"),
-    (r"surgical tech", "a Surgical Technologist", "Surgical Technologists"),
+     "a counselor", "counselors"),
+    (r"surgical tech", "a surgical technologist", "surgical technologists"),
     # \bmd\b is deliberately NOT here: titles carry state abbreviations
     # ("Registered Nurse - Towson, MD"), which would mint phantom Physicians.
-    (r"\bphysician\b(?![\s\-]*assistant)", "a Physician", "Physicians"),
+    (r"\bphysician\b(?![\s\-]*assistant)", "a physician", "physicians"),
 ]
 
 NON_CLINICAL = re.compile(
@@ -164,14 +188,31 @@ def families_of(title):
     return [i for i, (rx, _, _) in enumerate(FAMILIES) if re.search(rx, t)]
 
 
-def render_roles(titles):
+def bare(sing):
+    """'a bcba' -> 'BCBA' for the opener slot ("Is the BCBA role...")."""
+    return re.sub(r"^(a|an) ", "", sing)
+
+
+def dominant(titles):
+    """The one discipline a company is most actively hiring for."""
+    counts = Counter()
+    for t in titles:
+        for i in families_of(t):
+            counts[i] += 1
+    if not counts:
+        return None
+    i = counts.most_common(1)[0][0]
+    return bare(FAMILIES[i][1]), FAMILIES[i][2]
+
+
+def render_roles(titles, want_count=False):
     """Collapse a company's postings into at most three disciplines."""
     counts = Counter()
     for t in titles:
         for i in families_of(t):
             counts[i] += 1
     if not counts:
-        return ""
+        return ("", 0) if want_count else ""
     top = [i for i, _ in counts.most_common(3)]
     # A single posting can name several disciplines ("Nurse Practitioner or
     # Physician Assistant"). That is ONE opening, so it stays singular and
@@ -186,10 +227,12 @@ def render_roles(titles):
     else:
         joiner = " and "
     if len(parts) == 1:
-        return parts[0]
-    if len(parts) == 2:
-        return f"{parts[0]}{joiner}{parts[1]}"
-    return f"{parts[0]}, {parts[1]}{joiner}{parts[2]}"
+        out = parts[0]
+    elif len(parts) == 2:
+        out = f"{parts[0]}{joiner}{parts[1]}"
+    else:
+        out = f"{parts[0]}, {parts[1]}{joiner}{parts[2]}"
+    return (out, len(parts)) if want_count else out
 
 
 def write(svc, sid, data, tries=4):
@@ -211,6 +254,10 @@ def main():
     ap.add_argument("--preview", type=int, default=0)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--regenerate", action="store_true")
+    ap.add_argument("--signoff", action="store_true",
+                    help="Append 'Best,\\nJude'. OFF by default: the Instantly "
+                         "sequence already signs step 1, so this double-signs "
+                         "every email under two different names.")
     args = ap.parse_args()
 
     svc = build("sheets", "v4",
@@ -229,21 +276,32 @@ def main():
             continue
         d = bycomp.setdefault(c(r, COL_COMPANY),
                               {"titles": [], "rows": [], "first": "",
-                               "seg": c(r, COL_SEGMENT)})
+                               "cities": [], "seg": c(r, COL_SEGMENT)})
         d["titles"].append(c(r, COL_TITLE))
+        d["cities"].append(c(r, COL_CITY))
         d["rows"].append(i)
         d["first"] = d["first"] or c(r, COL_FIRST)
 
     made, skipped_norole, skipped_noname = {}, [], []
     for name, d in bycomp.items():
-        roles = render_roles(d["titles"])
-        if not roles:
+        dom = dominant(d["titles"])
+        if not dom:
             skipped_norole.append(name)
             continue
+        role, role_plural = dom
         first = first_name(d["first"])
         if not first:
             skipped_noname.append(name)
-        made[name] = TEMPLATE.format(first=first or "{first}", roles=roles)
+        # dominant city, so a multi-site company is anchored where the
+        # hiring actually is rather than on whichever row sorted first
+        city = ""
+        cities = [c for c in d["cities"] if c]
+        if cities:
+            city = Counter(cities).most_common(1)[0][0]
+        body = BODY.format(first=first or "{first}", role=role,
+                           role_plural=role_plural,
+                           in_city=f" in {city}" if city else "")
+        made[name] = body + (SIGNOFF if args.signoff else "")
 
     print(f"[{args.tab}] {len(bycomp)} companies")
     print(f"  bodies rendered      : {len(made)}")

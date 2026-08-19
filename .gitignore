@@ -21,6 +21,7 @@
 .claude/skills/production-directory-leads/data/
 .claude/skills/energy-emaas-leads/data/
 .claude/skills/production-demand-leads/data/
+.claude/skills/hirebase-healthcare-leads/data/
 
 # Python
 __pycache__/
@@ -38,3 +39,4 @@ venv/
 .idea/
 .vscode/
 *.swp
+.claude/campaign_archive/

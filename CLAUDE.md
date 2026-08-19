@@ -32,6 +32,7 @@ Each pipeline is a Claude Code skill with its own `SKILL.md` (authoritative deta
 | `nppes-new-clinics` | CMS NPPES bulk files | Newly-registered medical practices (pre-job-ad demand) | All 50 states + DC, filtered at export |
 | `production-house-leads` | Google Maps (Apify) | Commercial video production houses (supply side of the production lane) | LA, NYC, US secondary hubs, Toronto, London, Amsterdam, Berlin |
 | `production-directory-leads` | ProductionHub directory (custom Apify actor) | Commercial video production houses — **the live source for this lane**; the Maps store above is parked | US + Canada metros only (LA, NYC, Austin, Nashville, Chicago, Miami, Atlanta, Toronto) |
+| `hirebase-healthcare-leads` | HireBase job export | Healthcare demand — two lanes (Speech Language Pathologist + General Healthcare) | US |
 | `energy-emaas-leads` | EPA VIC licence register (free WFS) + Indeed (Apify) | Energy-intensive businesses for Energy GreenPrint's EMaaS offer — evidence-qualified only (licence or signal-bearing job ad) | AU: VIC first, NSW/QLD via `--state` + city grid |
 
 Utilities: `casualize-names`, `instantly-autoreply`, `add-webhook`, `local-server`. (`classify-leads` and `scrape-leads` are empty leftover directories — ignore them.)
@@ -62,8 +63,6 @@ The Indeed and LinkedIn pipelines share a common phase skeleton. All detailed ph
 Not every pipeline has every phase — check the skill's `SKILL.md` for the exact sequence.
 
 **`healthcare-demand-pipeline` replaces the retired `healthcare-leads-indeed` skill** (that directory is gone). Only five shared scripts survived the move into `healthcare-demand-pipeline/scripts/`: `scrape_and_pull.py`, `pull_dataset.py`, `reingest_from_apify.py`, `find_company_domains.py`, `verify_dms.py`. **The skeleton table above largely does not apply to it** — it has no `classify_companies.py`, `dedupe_by_company.py`, `ai_filter_jobs.py`, `find_dm.py`, or `enrich_emails.py` of its own, and there is no Phase 3: emails come out of the Apollo waterfall. Its real sequence is 1 → 1.5 → 1.9 → 2 → 2.5 → 2.9 → 2.9b → 4 → 5, documented in its `SKILL.md`. Specifically: Phase 1.5 `process_city_scrape.py` scripts the old manual filter steps (35-day window FIRST, then the 500-employee cap, then dedupe, then conservative classify); Phase 2 DM discovery runs through the **`apollo-dm-waterfall` skill**, not `find_dm.py`; Phases 4/5 are `generate_healthcare_demand.py` (copy templates live at the top of the script and are swapped per A/B test — never treat current copy as permanent) and `push_healthcare_demand.py`.
-
-**HireBase is a second source into the same skill (Aug 2026).** `normalize_hirebase_export.py` is the Phase 1.5 equivalent of `process_city_scrape.py` for HireBase job exports rather than Indeed scrapes — same 35-day window and 500-employee cap, same 29-col output, but two source traps of its own. (1) **HireBase column LETTERS are not stable across tabs**: it flattens JSON arrays, so a tab with more `benefits/*` or `services/*` entries shifts every later field (`companyName` is BL on one tab and CE on another). The script resolves every field by HEADER NAME; never address a HireBase export by letter. (2) **Exports get pasted on top of each other with an embedded header row mid-sheet**, which silently misaligns every row below it — `split_blocks()` detects the repeated header and maps each block against its own. **Dedupe is per-JOB on `applicationLink`, never by company** (Jude, 2026-08-19): despite the name, `jobBoardLink` is the company's board ROOT and maps 1:1 to companies, so deduping on it collapses the list to one row per company. A company keeps one row per live posting, with the count in AN. Output reserves AD-AM blank for the generation audit trail and parks HireBase-only fields at AN-AS. It classifies nothing and deletes nothing — agency/edu/oversized suspects are printed for a separate call. First run: "Healthcare US - Aug 19th" (`11RLxpT5…`), two lanes → tabs `SLP Campaign` (274 jobs / 87 companies) and `General Campaign` (1,998 jobs / 426 companies).
 
 **Per-client copy scripts are cloned, never parameterized.** When a second client needs different copy on the same pipeline, the generate/push pair is duplicated under a new name rather than branched with a flag — `generate_healthcare_demand.py`/`push_healthcare_demand.py` feed the LIVE Indiana campaign and must not be edited for another client; `generate_texas_demand.py`/`push_texas_demand.py` are the Texas clone (different copy, 5 slots, no persona/age-band routing, own tab); `generate_florida_demand.py`/`push_florida_demand.py` are the Florida clone (same client as Texas, copy approved 2026-08-01, 4 slots, tab `Leads`). The same convention produced `push_campaign_uk.py` and `generate_emails_uk.py` in `.claude/scripts/`. Clone; do not retrofit. The clones drift structurally too — on the Texas sheet AD is "Keep Reason" (a DM-title adjudication pass) and the generation audit trail starts at AE; on the Florida sheet AD holds the waterfall's `dm_status` (different vocabulary from AB elsewhere) and is never written by the generator, with the audit trail at AE-AJ. Florida's generator also **skips** rows where `employer_type` would fall back to the generic "healthcare employers" instead of sending a bland line — read the docstring at the top of each clone before touching it; the copy rules (single vs double newline spacing, historical-only claims, no bench claim) are deliberate and documented there.
 
@@ -402,6 +401,51 @@ DM target for this vertical (Jude, 2026-08-11, **hypothesis — no campaign data
 Two conventions differ from the rest of the repo and are deliberate: **AC is the PM status column** (elsewhere AB carries the single status), and **icebreaker-less rows are still sent** — Jude reversed `personalized-icebreakers`' personalization-only posture on 2026-08-12, so 129 of 312 leads go out on Saad's plain copy alone rather than being dropped.
 
 Cloudflare, geography, and profile-thinness gotchas all live in the SKILL.md — the short version: run the scraper with `--local` (cloud runs are CF-blocked), ProductionHub is US+Canada only, and free-tier profiles carry almost no contact data, so domains come from `exa-website-enrichment` on the exported sheet rather than from profile visits.
+
+## hirebase-healthcare-leads
+
+Healthcare demand lane fed from **HireBase** exports. A SEPARATE skill from
+`healthcare-demand-pipeline` by Jude's explicit call (2026-08-19) — HireBase is
+a different platform under evaluation, and its data is rich enough that the
+enrichment shape genuinely differs. `SKILL.md` is detailed and current; read it
+before touching this lane. Phases: `normalize_export.py` → `resolve_domains.py`
+→ `collect_classification.py` → *Claude judges* → `apply_classification.py`.
+Phase 4+ (DM, copy, push) is NOT built.
+
+Three things about this platform that will bite if assumed away:
+
+- **Column letters are not stable across tabs.** HireBase flattens JSON arrays,
+  so a tab with more `benefits/*` or `services/*` entries shifts every later
+  field — `companyName` is BL on one tab and CE on another. Resolve by HEADER
+  NAME, never by letter. Exports also get pasted on top of each other with a
+  second header row buried mid-sheet, silently misaligning everything below it;
+  `split_blocks()` handles that.
+- **Domain resolution is nearly free here, so search is a LAST resort.** 464 of
+  468 companies already carry a website and 468 of 468 carry a company
+  LinkedIn. Waterfall: sheet domain (only if its root corroborates the company
+  name) → the company's LinkedIn page → then the old Google/Exa resolution.
+  Only 4 companies reached tier 3. **LinkedIn is not trusted blindly either** —
+  it replaced a correct domain with a GiveLively donation page on the first
+  run, so a replacement must be non-junk AND corroborate the name, else the
+  sheet's value stands. Unchanged beats wrong.
+- **HireBase attaches the WRONG company's profile on ~12% of companies** (54 of
+  468). `companyData` is fuzzy name-matched: "GMH UK" (UK steel billets) posts
+  RNs in Georgia; "SIH Hôtels" (French hotel investor) posts RN Same Day
+  Surgery in Illinois — that employer is Southern Illinois Healthcare. Because
+  the NAME matches, a naive name-vs-domain check ACCEPTS the wrong company's
+  website. Detector: profile text has no healthcare signal while the postings
+  are clinical. Those rows are stamped `REVIEW_PROFILE_MISMATCH` and must be
+  held back from spend. The ATS tenant in col AR is the ground truth for
+  recovering the real employer (not built yet).
+
+**Dedupe is per-JOB on `applicationLink`, never by company** (Jude). Despite the
+name, `jobBoardLink` is the company's board ROOT and maps 1:1 to companies, so
+deduping on it collapses the list to one row per company. Openings-per-company
+is precomputed in AN; one-lead-per-company vs one-per-job is an OPEN Phase 4
+decision. Classification is deliberately light (Jude: "no need to do too hard")
+— default KEEP, 377 auto-kept, 91 judged, nothing deleted. **Downstream must
+require AV == KEEP.** Layout is the 29-col base with AD-AM reserved blank for
+the audit trail and AN-AV carrying HireBase extras + statuses.
 
 ## energy-emaas-leads
 

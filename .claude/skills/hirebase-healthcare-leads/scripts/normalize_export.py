@@ -1,12 +1,16 @@
 """
-Phase 1.5 (HireBase source) — normalize a raw HireBase job export tab into the
-repo's 29-col campaign schema, as its own lane tab.
+Phase 1 — normalize a raw HireBase job export tab into the repo's 29-col
+campaign schema, as its own lane tab.
 
-WHY THIS EXISTS
-This is the healthcare demand lane fed from a HireBase export instead of the
-Indeed city-grid scrape, so `process_city_scrape.py` does not apply. Built
-2026-08-19 for the "Healthcare US - Aug 19th" sheet, which runs TWO lanes:
-Speech Language Pathologist and General Healthcare.
+WHY THIS SKILL IS SEPARATE (Jude, 2026-08-19)
+HireBase is a different PLATFORM being tested, not another source for the
+Indeed pipeline, so this lane does NOT reuse `healthcare-demand-pipeline`.
+The data arrives far richer than an Indeed scrape — company website is already
+present on 464 of 468 companies and company LinkedIn on 468 of 468 — which
+changes the whole enrichment shape downstream (see resolve_domains.py: the
+expensive Google-search domain resolution is a LAST resort here, not phase
+1.9). Built 2026-08-19 for the "Healthcare US - Aug 19th" sheet, which runs
+TWO lanes: Speech Language Pathologist and General Healthcare.
 
 TWO TRAPS THIS SCRIPT EXISTS TO HANDLE (both hit the Aug 19th sheet):
 
@@ -96,6 +100,9 @@ HEADERS = [
     # HireBase extras (AN-AS)
     "Openings @ Company", "Company LinkedIn", "Location Type",
     "Job Board", "Job Board Link", "Source Tab",
+    # Enrichment status (AT-AV) — AT/AU by resolve_domains.py,
+    # AV by apply_classification.py
+    "domain_status", "domain_note", "company_status",
 ]
 
 
@@ -329,6 +336,7 @@ def main():
             counts.get(company or g("jobBoardLink"), 1),
             g("companyData/linkedin_link"), g("locationType"),
             g("jobBoard"), g("jobBoardLink"), args.src_tab,
+            "", "", "",
         ])
 
     companies = {r[10] for r in out_rows if r[10]}

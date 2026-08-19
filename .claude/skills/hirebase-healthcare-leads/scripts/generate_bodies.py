@@ -16,6 +16,10 @@ Connector framing, as always for NEXAM: Jude is offering an introduction to a
 specialist, never writing as the party delivering the service. No sign-off —
 the sending account's signature carries identity.
 
+NO RECIPIENT NICKNAME CASUALIZATION on this lane (Jude, 2026-08-19), the same
+call he made on production-directory-leads: a stranger's cold email renaming
+someone reads badly. William stays William. Only letter case is normalized.
+
 THE ONLY REAL WORK IS {roles}, AND RAW TITLES CANNOT BE USED.
 HireBase titles are per-posting and near-duplicate, so a straight join reads
 like a scrape:
@@ -70,23 +74,6 @@ Are you hiring for {roles}?
 I know someone with a few candidates looking for new roles.
 
 Can I connect you?"""
-
-# Common nicknames only (shared rule — see the casualize-names skill).
-NICKNAMES = {
-    "William": "Will", "Michael": "Mike", "Christopher": "Chris",
-    "Matthew": "Matt", "Daniel": "Dan", "Benjamin": "Ben",
-    "Nicholas": "Nick", "Alexander": "Alex", "Jonathan": "Jon",
-    "Timothy": "Tim", "Jeffrey": "Jeff", "Gregory": "Greg",
-    "Joshua": "Josh", "Robert": "Rob", "Richard": "Rich",
-    "Thomas": "Tom", "Kenneth": "Ken", "Joseph": "Joe",
-    "Edward": "Ed", "Donald": "Don", "Ronald": "Ron",
-    "Steven": "Steve", "Stephen": "Steve", "David": "Dave",
-    "Douglas": "Doug", "Lawrence": "Larry", "Frederick": "Fred",
-    "Raymond": "Ray", "Jennifer": "Jen", "Elizabeth": "Liz",
-    "Katherine": "Kate", "Kathleen": "Kathy", "Stephanie": "Steph",
-    "Samantha": "Sam", "Jacqueline": "Jackie", "Deborah": "Deb",
-    "Pamela": "Pam", "Cynthia": "Cindy", "Rebecca": "Becca",
-}
 
 # (regex, singular-with-article, plural). Order matters: a more specific
 # family must precede one that would otherwise swallow it.
@@ -147,12 +134,25 @@ def a1(col, row):
     return f"{s}{row}"
 
 
-def casual_first(name):
+def first_name(name):
+    """NO NICKNAME CASUALIZATION ON THIS LANE (Jude, 2026-08-19).
+
+    The repo's standing rule casualizes recipient first names
+    (William -> Will), but Jude dropped it here for the same reason he
+    dropped it on production-directory-leads: a stranger's cold email
+    renaming someone reads badly. William stays William.
+
+    Case IS still normalized — AMF and Apollo return "SARAH" and "sarah" —
+    because fixing shouting is formatting, not renaming. Names that are
+    genuinely initials or already mixed-case (McKenzie, JoAnn) are left
+    exactly as they came."""
     n = (name or "").strip()
     if not n:
         return ""
     n = n.split()[0]
-    return NICKNAMES.get(n.title(), n if n.isupper() else n.title())
+    if n.isupper() or n.islower():
+        return n.capitalize()
+    return n
 
 
 def families_of(title):
@@ -211,8 +211,6 @@ def main():
     ap.add_argument("--preview", type=int, default=0)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--regenerate", action="store_true")
-    ap.add_argument("--no_casual", action="store_true",
-                    help="Do not shorten first names (William->Will).")
     args = ap.parse_args()
 
     svc = build("sheets", "v4",
@@ -242,7 +240,7 @@ def main():
         if not roles:
             skipped_norole.append(name)
             continue
-        first = d["first"] if args.no_casual else casual_first(d["first"])
+        first = first_name(d["first"])
         if not first:
             skipped_noname.append(name)
         made[name] = TEMPLATE.format(first=first or "{first}", roles=roles)

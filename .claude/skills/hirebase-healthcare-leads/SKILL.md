@@ -212,6 +212,39 @@ The `LARGE_ORG` arm is dominated by a few employers: Compassus 385 rows, Ivy
 Rehab 104, Methodist Health System 75. 27 companies with 10-24 live openings
 sit in `WITHIN_CAP` and are genuinely borderline.
 
+## Phase 4 copy (Jude's template, 2026-08-19)
+
+Verbatim; only `{first}` and `{roles}` may change. No subject, no sign-off,
+no em dashes.
+
+```
+Hi {first},
+
+Are you hiring for {roles}?
+I know someone with a few candidates looking for new roles.
+
+Can I connect you?
+```
+
+**No recipient nickname casualization** on this lane (Jude, 2026-08-19) — same
+call as `production-directory-leads`. William stays William; only letter case
+is normalized, since AMF returns "SARAH".
+
+`{roles}` is the only real work. Raw HireBase titles are per-posting and
+near-duplicate, so joining them reads like scraped data — one company's SLP
+openings arrive as five separate titles. `generate_bodies.py` matches titles
+against DISCIPLINE FAMILIES and collapses them, counting every family a title
+matches (one posting can name several), capped at 3 by live-posting count.
+A single posting stays singular and joins with "or".
+
+Four matcher bugs were caught in `--preview` and would have shipped:
+"physician **assistant**" also matching the Physician family; `\bmd\b`
+matching state abbreviations in titles; a one-posting company being
+pluralised; and "Speech **and** Language Pathologist" not matching at all.
+**Always read a preview before approving.**
+
+Coverage: SLP 76/77 companies, General 393/393.
+
 ## Column layout (both lane tabs)
 
 Standard 29-col base at A-AC, so `exa-website-enrichment` and

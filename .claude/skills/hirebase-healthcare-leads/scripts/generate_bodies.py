@@ -83,13 +83,30 @@ BATCH = 10
 # GEOGRAPHY-FREE, like Florida and unlike Texas ("a clinic here in Texas").
 # This list spans 49 states, so any state-specific claim would be false in
 # most inboxes.
-BODY = """Hi {first},
+# ONE role — Jude's copy exactly. The role appearing twice ("the BCBA role"
+# ... "placing BCBAs") is fine here; it reinforces rather than repeats, and it
+# is how the proven Florida copy reads.
+BODY_ONE = """Hi {first},
 
 Is the {role} role{in_city} still open?
 
 I know a recruiter who specialises in placing {role_plural}. He only works on contingent, so nothing is owed unless the hire sticks.
 
 If this hire is a priority right now, I'd be glad to make an intro."""
+
+# SEVERAL roles — named ONCE, in the opener, then referred back to as "them"
+# (Jude, 2026-08-19). Spelling three disciplines out twice is what made the
+# multi-role case read badly; the fix is one mention plus a pronoun, not a
+# shorter list. The opener is an observation rather than a question because we
+# obviously already know — we saw all three ads. The CTA also has to shift
+# from "this hire" to "any of these", since there is more than one.
+BODY_MANY = """Hi {first},
+
+Noticed you're hiring for {roles}{in_city}.
+
+I know a recruiter who specialises in placing them. He only works on contingent, so nothing is owed unless the hire sticks.
+
+If any of these are a priority right now, I'd be glad to make an intro."""
 
 # Jude wrote "Best, Jude" inline at the end. It is NOT in BODY: the Instantly
 # sequence already appends "Best,{{sendingAccountFirstName}}" + "Sent from my
@@ -186,6 +203,25 @@ def families_of(title):
                            # discipline ("Work Study ... Speech-Language
                            # Pathology Assistant to the Program Director")
     return [i for i, (rx, _, _) in enumerate(FAMILIES) if re.search(rx, t)]
+
+
+CITY_PREFIX = re.compile(
+    r"^(city|town|village|borough|township|municipality) of\s+", re.I)
+
+
+def clean_city(c):
+    """Source city values carry administrative prefixes and facility names:
+    'City of Rochester', 'Primary Care - Sonora - Sonora', 'Glacial Ridge
+    Heath System - Glenwood'. Writing those into a cold email reads like
+    unedited data. Take the last ' - ' segment (the facility precedes the
+    place) and drop the 'City of' prefix."""
+    c = (c or "").strip()
+    if not c:
+        return ""
+    if " - " in c:
+        c = c.split(" - ")[-1].strip()
+    c = CITY_PREFIX.sub("", c).strip()
+    return "" if re.search(r"\d", c) or len(c.split()) > 4 else c
 
 
 def bare(sing):
@@ -292,15 +328,28 @@ def main():
         first = first_name(d["first"])
         if not first:
             skipped_noname.append(name)
+        roles, nfam = render_roles(d["titles"], want_count=True)
         # dominant city, so a multi-site company is anchored where the
         # hiring actually is rather than on whichever row sorted first
-        city = ""
-        cities = [c for c in d["cities"] if c]
-        if cities:
-            city = Counter(cities).most_common(1)[0][0]
-        body = BODY.format(first=first or "{first}", role=role,
-                           role_plural=role_plural,
-                           in_city=f" in {city}" if city else "")
+        cities = [x for x in (clean_city(c) for c in d["cities"]) if x]
+        city = Counter(cities).most_common(1)[0][0] if cities else ""
+        nloc = len(set(cities))
+        # BODY_ONE is only right for a company with ONE live posting. Six
+        # registered-nurse openings asked about as "the registered nurse role"
+        # understates the pain and reads as if we only half-looked (Jude,
+        # 2026-08-19). Several openings of a SINGLE discipline take the plural
+        # observation form too — render_roles already pluralises them.
+        if nfam == 1 and len(d["titles"]) == 1:
+            body = BODY_ONE.format(first=first or "{first}", role=role,
+                                   role_plural=role_plural,
+                                   in_city=f" in {city}" if city else "")
+        else:
+            # naming one city on a company hiring across several would be
+            # wrong, so the spread is acknowledged without listing them
+            where = (f" in {city}" if nloc == 1 and city
+                     else " across a few locations" if nloc > 1 else "")
+            body = BODY_MANY.format(first=first or "{first}", roles=roles,
+                                    in_city=where)
         made[name] = body + (SIGNOFF if args.signoff else "")
 
     print(f"[{args.tab}] {len(bycomp)} companies")

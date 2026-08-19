@@ -16,10 +16,10 @@ First run: sheet **"Healthcare US - Aug 19th"**
 
 | Lane | Working tab | Jobs | Companies |
 |---|---|---|---|
-| Speech Language Pathologist | `SLP Campaign` | 256 | 83 |
-| General Healthcare | `General Campaign` | 1,810 | 418 |
+| Speech Language Pathologist | `SLP Campaign` | 253 | 81 |
+| General Healthcare | `General Campaign` | 1,788 | 407 |
 
-(2,272 rows after phase 1; 206 removed at the screen — see below.)
+(2,272 rows after phase 1; 231 removed at the screen — see below.)
 
 ## Why this platform is different
 
@@ -70,8 +70,39 @@ the profile text carries no healthcare signal while the postings are clinical.
 Those rows are stamped `REVIEW_PROFILE_MISMATCH` and held back from spend.
 
 **The ATS tenant in col AR (`jobBoardLink`) is the ground truth** for
-recovering the real employer — `gmh.wd12.myworkdayjobs.com`,
-`oneoncology.wd1.myworkdayjobs.com/Astera`. That recovery is not built yet.
+recovering the real employer, and the job description in col J is the other
+half — postings name their employer in the opening sentence. Both are free.
+`collect_identity_recovery.py` gathers them; Claude judges; and
+`apply_identity_recovery.py` rewrites the name and website behind a
+**PROOF-ON-PAGE GATE** — a judge-proposed domain is fetched and must actually
+name the company, or the name is corrected and the website is left BLANK with
+`needs_search`. Never write a domain on the judge's say-so.
+
+Recovery of the 61 mismatch companies (221 rows), 2026-08-19:
+
+| Outcome | Companies | Rows |
+|---|---|---|
+| `KEEP_AS_IS` — name/site were right, only the description was wrong | 12 | 37 |
+| `RECOVERED` — real employer identified, in ICP | 17 | 35 |
+| `RECOVERED_OVER_CAP` — real employer is a large system | 12 | 101 |
+| `DROP_AGENCY` / `DROP_NOT_EMPLOYER` — recovery unmasked a staffing firm | 11 | 25 |
+| `UNRESOLVED` — evidence insufficient | 9 | 23 |
+
+Worked examples: `GMH UK` → **Grady Health System** (tenant `gmh`, Main Grady
+Campus Downtown Atlanta); `Epyz` → **Nemours Children's Health**; `SIH Hôtels`
+→ **Southern Illinois Healthcare**; `Wellth` → **West Tennessee Healthcare**
+(tenant `wth`); `TruMed Systems` → **University Health Kansas City** (tenant
+`trumed` = Truman Medical); `Obran Cooperative` → **Apollo Home Healthcare**.
+
+⚠️ **Most recoverable mismatches turned out to be large hospital systems** —
+101 of 221 rows. They are stamped `REVIEW_OVER_CAP` rather than sent: identity
+is now TRUE, but the standing 500-employee cap says do not email them. That is
+Jude's call to make, not the pipeline's.
+
+8 of 29 proposed domains failed the proof gate on a **WAF block**, not a wrong
+guess — consistent with `personalized-icebreakers`' finding that ~35% of sites
+block automated fetches even with full Chrome headers. Those rows keep the
+corrected NAME and fall to `needs_search`.
 
 ## Phases
 
@@ -83,6 +114,8 @@ recovering the real employer — `gmh.wd12.myworkdayjobs.com`,
 | 3b | *Claude judges in-session* | Hand-write `data/class_verdicts.json`. |
 | 3c | `apply_classification.py` | Write col AV under a hallucination guard. Deletes nothing. |
 | 3d | `delete_rows.py` | Remove rows by status/company. Backs up every row first. `--apply` required. |
+| 3e | `collect_identity_recovery.py` | Recover the REAL employer behind mismatch rows. Free. |
+| 3f | *Claude judges* → `apply_identity_recovery.py` | Rewrite name/website under a **proof-on-page gate**. |
 | 4+ | not built | DM discovery, copy, push. |
 
 ### Dedupe: per JOB, never per company (Jude, 2026-08-19)
@@ -137,11 +170,14 @@ DROP_NOT_EMPLOYER.
 | "Intermountain Ventures" | 100 | ATS tenant `imh` — really Intermountain Health, ~68k staff, far over the 500 cap |
 | "Elas" | 22 | ATS tenant `denverhealth` — really Denver Health, ~7k staff |
 | "TSFD Limited" | 6 | ATS tenant `tysonfoods` — an occupational-health RN at a meat plant |
+| 10 more staffing firms unmasked by identity recovery | 25 | Ladgov, Resolution Think, Grace Federal, Flatwater, Topaz HR, ICS, StarTekk, MacMore, Ansible, HMR |
 
 The last three were unmasked by the ATS tenant, not by their (wrong) profile.
-The remaining 221 mismatch rows were deliberately KEPT: their postings are real
-clinical demand and the employer is recoverable from col AR. They stay flagged
-so nothing emails them by mistake.
+The 221 mismatch rows were then RECOVERED rather than discarded — see Trap 3.
+
+Final state: **2,041 rows / 448 companies**, of which **1,911 rows are `KEEP`**
+and enrichable. Remaining held back: 101 `REVIEW_OVER_CAP`, 23
+`REVIEW_PROFILE_MISMATCH`, 6 `REVIEW_NEEDS_DOMAIN`.
 
 > **Downstream must require `AV == KEEP`.** The 64 mismatch companies (349
 > rows) carry another company's domain; enriching them emails the wrong org.

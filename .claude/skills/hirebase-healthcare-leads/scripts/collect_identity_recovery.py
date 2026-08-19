@@ -37,7 +37,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "..", "data")
 
 COL_TITLE, COL_DESC, COL_COMPANY, COL_SITE = 1, 9, 10, 11
 COL_CITY, COL_STATE, COL_BOARDLINK, COL_STATUS = 17, 18, 43, 47
-TARGET = "REVIEW_PROFILE_MISMATCH"
+DEFAULT_TARGET = "REVIEW_PROFILE_MISMATCH"
 
 ATS_HOST_TENANT = ("myworkdayjobs", "oraclecloud", "icims", "bamboohr",
                    "applytojob", "jobvite", "paycor")
@@ -71,6 +71,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet_url", required=True)
     ap.add_argument("--tabs", nargs="+", required=True)
+    ap.add_argument("--statuses", nargs="+", default=[DEFAULT_TARGET],
+                    help="Which company_status values to collect evidence for. "
+                         "Defaults to the mismatch pile, but the same evidence "
+                         "(ATS tenant + job description) recovers identity for "
+                         "any row whose company name is suspect.")
     ap.add_argument("--out", default=os.path.join(DATA_DIR, "identity_candidates.json"))
     args = ap.parse_args()
 
@@ -85,7 +90,7 @@ def main():
         for r in vals[1:]:
             def c(i, _r=r):
                 return _r[i].strip() if i < len(_r) else ""
-            if c(COL_STATUS) != TARGET:
+            if c(COL_STATUS) not in args.statuses:
                 continue
             name = c(COL_COMPANY)
             if not name:

@@ -116,6 +116,7 @@ corrected NAME and fall to `needs_search`.
 | 3d | `delete_rows.py` | Remove rows by status/company. Backs up every row first. `--apply` required. |
 | 3e | `collect_identity_recovery.py` | Recover the REAL employer behind mismatch rows. Free. |
 | 3f | *Claude judges* → `apply_identity_recovery.py` | Rewrite name/website under a **proof-on-page gate**. |
+| 3g | `assign_segments.py` | Segment, size band and DM target per company. Free. |
 | 4+ | not built | DM discovery, copy, push. |
 
 ### Dedupe: per JOB, never per company (Jude, 2026-08-19)
@@ -182,6 +183,35 @@ and enrichable. Remaining held back: 101 `REVIEW_OVER_CAP`, 23
 > **Downstream must require `AV == KEEP`.** The 64 mismatch companies (349
 > rows) carry another company's domain; enriching them emails the wrong org.
 
+## Outreach unit and segments (Jude, 2026-08-19)
+
+**One lead per COMPANY, never one per job.** Rows stay per-job as the evidence
+layer; openings / cities / roles become copy VARIABLES. A DM with nine reqs is
+still one person with one inbox.
+
+| Segment (AW) | Companies | Rows | Hook |
+|---|---|---|---|
+| `SINGLE` | 214 | 214 | the one specific req |
+| `MULTI_ONE_CITY` | 71 | 226 | volume at a single site |
+| `MULTI_CITY` | 147 | 1,534 | outgrown the local network — the connector pitch |
+
+**`dm_target` (AY) is CEO on all 432 companies.** Under 500 that is the only
+evidence-backed rung (owner/CEO 2.80% vs COO/Ops 0.00% from 87, HR 0.00% from
+32). Multi-city companies are deliberately NOT routed to a COO for that reason,
+and because only the owner is company-wide — office managers are per-location.
+
+⚠️ **`size_band` (AX) marks a deliberate TEST, not a proven rung.** 18
+companies / 763 rows are `LARGE_ORG`. The known 0.00% from 251 large companies
+is confounded — those were targeted 175 clinical / 22 HR / 41 other with **no
+actual CEO among them**, so it disproves clinical-and-HR-at-big-orgs, not
+large orgs. A large-org CEO has never been tried. Jude chose to try it
+(2026-08-19); AX keeps the bands separable so the run answers the question
+instead of blurring it into the aggregate. Read reply rates BY BAND.
+
+The `LARGE_ORG` arm is dominated by a few employers: Compassus 385 rows, Ivy
+Rehab 104, Methodist Health System 75. 27 companies with 10-24 live openings
+sit in `WITHIN_CAP` and are genuinely borderline.
+
 ## Column layout (both lane tabs)
 
 Standard 29-col base at A-AC, so `exa-website-enrichment` and
@@ -195,7 +225,8 @@ AD-AM RESERVED BLANK for the generation audit trail
 AN    Openings @ Company   AO Company LinkedIn  AP Location Type
 AQ    Job Board            AR Job Board Link (ATS tenant = ground truth)
 AS    Source Tab           AT domain_status     AU domain_note
-AV    company_status
+AV    company_status      AW segment      AX size_band
+AY    dm_target           AZ cities       BA roles
 ```
 
 ## Commands

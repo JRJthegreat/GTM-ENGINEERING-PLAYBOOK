@@ -147,6 +147,9 @@ def main():
     ap.add_argument("--tabs", nargs="+", required=True)
     ap.add_argument("--candidates", default=os.path.join(DATA_DIR, "identity_candidates.json"))
     ap.add_argument("--verdicts", default=os.path.join(DATA_DIR, "identity_verdicts.json"))
+    ap.add_argument("--statuses", nargs="+", default=["REVIEW_PROFILE_MISMATCH"],
+                    help="Rows with these company_status values are eligible "
+                         "to be rewritten. Must match the collect run.")
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
@@ -226,7 +229,7 @@ def main():
             def c(i, _r=r):
                 return _r[i].strip() if i < len(_r) else ""
             name = c(COL_COMPANY)
-            p = plan.get(name) if c(COL_STATUS) == "REVIEW_PROFILE_MISMATCH" else None
+            p = plan.get(name) if c(COL_STATUS) in args.statuses else None
             if not p:
                 colK.append([name]); colL.append([c(COL_SITE)])
                 colAO.append([c(COL_LINKEDIN)])

@@ -65,6 +65,7 @@ TOKEN_PATH = os.path.join(SCRIPT_DIR, "..", "..", "..", "token.json")
 
 COL_TITLE, COL_COMPANY, COL_CITY = 1, 10, 17
 COL_FIRST, COL_BODY = 23, 25
+COL_DM_NAME = 19
 COL_STATUS, COL_SEGMENT = 47, 48
 BATCH = 10
 
@@ -193,7 +194,15 @@ def first_name(name):
     n = (name or "").strip()
     if not n:
         return ""
-    n = n.split()[0]
+    parts = n.split()
+    # "R. Adam Fishman" -> Adam. A leading initial is not a name, and the
+    # subject line ("R., still hiring?") is where that shows up worst.
+    while parts and (len(parts[0].rstrip(".")) <= 1 or parts[0].rstrip(".").isupper()
+                     and len(parts[0].rstrip(".")) == 1):
+        parts.pop(0)
+    if not parts:
+        return ""
+    n = parts[0]
     if n.isupper() or n.islower():
         return n.capitalize()
     return n
@@ -322,20 +331,26 @@ def main():
             continue
         d = bycomp.setdefault(c(r, COL_COMPANY),
                               {"titles": [], "rows": [], "first": "",
-                               "cities": [], "seg": c(r, COL_SEGMENT)})
+                               "full": "", "cities": [],
+                               "seg": c(r, COL_SEGMENT)})
         d["titles"].append(c(r, COL_TITLE))
         d["cities"].append(c(r, COL_CITY))
         d["rows"].append(i)
         d["first"] = d["first"] or c(r, COL_FIRST)
+        d["full"] = d["full"] or c(r, COL_DM_NAME)
 
     made, skipped_norole, skipped_noname = {}, [], []
+    fixed_first = {}
     for name, d in bycomp.items():
         dom = dominant(d["titles"])
         if not dom:
             skipped_norole.append(name)
             continue
         role, role_plural = dom
-        first = first_name(d["first"])
+        # col X can hold a bare initial ("R." for R. Adam Fishman), which
+        # resolves to nothing. Fall back to the full DM name, where the real
+        # given name still sits.
+        first = first_name(d["first"]) or first_name(d["full"])
         if not first:
             skipped_noname.append(name)
         roles, nfam = render_roles(d["titles"], want_count=True)
@@ -362,6 +377,11 @@ def main():
                 first=first or "{first}", roles=roles, in_city=where,
                 cta=CTA_ONE if len(d["titles"]) == 1 else CTA_MANY)
         made[name] = body + (SIGNOFF if args.signoff else "")
+        # The subject line renders {{firstName}} from col X, so a raw
+        # "R." there would ship as "R., still hiring?". Heal the cell to
+        # whatever the body greets, so subject and body always agree.
+        if first and first != d["first"]:
+            fixed_first[name] = first
 
     print(f"[{args.tab}] {len(bycomp)} companies")
     print(f"  bodies rendered      : {len(made)}")
@@ -392,11 +412,17 @@ def main():
         print("\n  (no --apply and no --preview — nothing written)")
         return
 
+    if fixed_first:
+        print(f"  first names healed for the subject line: {len(fixed_first)} "
+              f"{list(fixed_first.items())[:3]}")
     pending, n = [], 0
     for name, body in made.items():
-        if not bycomp[name]["first"]:
-            continue                      # never send "Hi {first},"
+        if "{first}" in body:
+            continue                      # never write "Hi {first},"
         for ri in bycomp[name]["rows"]:
+            if name in fixed_first:
+                pending.append({"range": f"'{args.tab}'!{a1(COL_FIRST, ri + 2)}",
+                                "values": [[fixed_first[name]]]})
             if c(rows[ri], COL_BODY) and not args.regenerate:
                 continue
             pending.append({"range": f"'{args.tab}'!{a1(COL_BODY, ri + 2)}",

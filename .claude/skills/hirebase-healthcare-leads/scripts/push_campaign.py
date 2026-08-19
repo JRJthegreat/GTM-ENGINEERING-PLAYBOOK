@@ -20,8 +20,12 @@ exactly one lane per company), and within that the first row per company wins.
 Jude's hard reaction to the two-emails-from-me case is the reason this guard
 exists.
 
-NO SENDING ACCOUNTS ARE ATTACHED — Jude configures mailboxes in the UI. The
-campaign is created as a DRAFT and he activates it.
+MAILBOXES ARE ATTACHED BY TAG and provider matching is enabled, exactly as
+Jude configured the SLP campaign and told us to reuse (2026-08-20). This
+reverses the older "never attach sending accounts" default FOR THIS LANE — he
+wants the tags applied at create time, not fixed by hand afterwards. Individual
+addresses are still never attached; only tags. The campaign is still created as
+a DRAFT and Jude activates it.
 
 Standing rules enforced: text_only + first_email_text_only; the body carries no
 sign-off (the SEQUENCE owns it, so including one would sign twice); custom
@@ -82,6 +86,31 @@ STEP4 = ("<div>Hi {{firstName}},<br /><br />"
          "make the intro." + SIGN_IPHONE + "</div>")
 
 
+# Mailboxes are attached BY TAG and provider matching is on, exactly as Jude
+# set them on the SLP campaign and told us to reuse (2026-08-20). This REVERSES
+# the older "never attach sending accounts" default for this lane — he wants
+# the tags applied at create time rather than fixed by hand afterwards.
+#
+# Tag IDs are workspace-level and stable. This set is NOT the same as the one
+# in push_florida_demand.py: Jude added two tags and dropped Zapmail, so copy
+# from here, not from the Florida script.
+EMAIL_TAG_LIST = [
+    "2b2adf27-cf48-4ed1-bcb4-513ecb49f719",
+    "d221f400-cd05-4ca0-bf28-c5194227f701",   # ScaledMail-Google
+    "d00f89d5-9a82-4602-8614-64a172de6424",   # ScaledMail-Microsoft
+    "ce2014e8-b42f-415e-b5f3-c185093f2042",
+]
+
+# ORDER MATTERS — these are evaluated as precedence rules, and Jude's order
+# puts the catch-all FIRST, which is not how push_florida_demand.py has it.
+# Reproduce this list verbatim; do not "tidy" it into the Florida ordering.
+PROVIDER_ROUTING_RULES = [
+    {"action": "send", "recipient_esp": ["all"],     "sender_esp": ["google"]},
+    {"action": "send", "recipient_esp": ["google"],  "sender_esp": ["google"]},
+    {"action": "send", "recipient_esp": ["outlook"], "sender_esp": ["outlook"]},
+]
+
+
 def headers():
     return {"Authorization": f"Bearer {INSTANTLY_KEY}",
             "Content-Type": "application/json"}
@@ -131,8 +160,10 @@ def create_campaign(name):
         "first_email_text_only": True,
         "prioritize_new_leads": False,
         "stop_for_company": False,
-        # NO email_tag_list / sending accounts — Jude attaches mailboxes in
-        # the UI. Adding them here is a standing prohibition.
+        "insert_unsubscribe_header": False,
+        "email_tag_list": EMAIL_TAG_LIST,
+        "match_lead_esp": True,
+        "provider_routing_rules": PROVIDER_ROUTING_RULES,
     }
     r = requests.post(f"{BASE}/campaigns", headers=headers(),
                       json=payload, timeout=30)

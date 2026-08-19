@@ -312,8 +312,15 @@ The shared companions do NOT cover this lane: `amf_dm_fallback.py` targets only
 | HireBase SLP - Aug 2026 | `8e6cbb7c-c13b-4536-9be7-f8ba607e9558` | 44 |
 | HireBase General Healthcare - Aug 2026 | `92be979f-8be8-4f05-89b9-b78f6b32fb0c` | 280 |
 
-324 leads, **324 distinct inboxes** — no one receives two emails. No sending
-accounts attached; Jude wires mailboxes and activates.
+324 leads, **324 distinct inboxes** — no one receives two emails.
+
+**Mailboxes are attached BY TAG at create time** (Jude, 2026-08-20 — this
+reverses the older "never attach" default). Four workspace tags plus
+`match_lead_esp: true` and an ORDERED `provider_routing_rules` list whose
+catch-all `all -> google` comes FIRST. Both values live at the top of
+`push_campaign.py`; they differ from `push_florida_demand.py` (two tags added,
+Zapmail dropped, different rule order), so copy from here. Campaigns are still
+created as DRAFTs and Jude activates them.
 
 Sequence: day 0/+2/+3/+4, blank subjects on 2-4 so they thread. Subject is
 `{{firstName}}, still hiring?`. Step 3 carries the historical placement story,

@@ -32,7 +32,8 @@ Each pipeline is a Claude Code skill with its own `SKILL.md` (authoritative deta
 | `nppes-new-clinics` | CMS NPPES bulk files | Newly-registered medical practices (pre-job-ad demand) | All 50 states + DC, filtered at export |
 | `production-house-leads` | Google Maps (Apify) | Commercial video production houses (supply side of the production lane) | LA, NYC, US secondary hubs, Toronto, London, Amsterdam, Berlin |
 | `production-directory-leads` | ProductionHub directory (custom Apify actor) | Commercial video production houses — **the live source for this lane**; the Maps store above is parked | US + Canada metros only (LA, NYC, Austin, Nashville, Chicago, Miami, Atlanta, Toronto) |
-| `hirebase-healthcare-leads` | HireBase job export | Healthcare demand — two lanes (Speech Language Pathologist + General Healthcare) | US |
+| `production-demand-leads` | Indeed + LinkedIn posts + EDGAR Form D + FB Ad Library | Demand side of the production lane — brands needing commercial video NOW, signal-stacked per company | US supply-side metros (LA/NYC/Chicago/Atlanta/Austin/Miami/Nashville) |
+| `hirebase-healthcare-leads` | HireBase job export | Healthcare demand — two lanes (Speech Language Pathologist + General Healthcare); **both campaigns ACTIVE since 2026-08-20** | US |
 | `energy-emaas-leads` | EPA VIC licence register (free WFS) + Indeed (Apify) | Energy-intensive businesses for Energy GreenPrint's EMaaS offer — evidence-qualified only (licence or signal-bearing job ad) | AU: VIC first, NSW/QLD via `--state` + city grid |
 
 Utilities: `casualize-names`, `instantly-autoreply`, `add-webhook`, `local-server`. (`classify-leads` and `scrape-leads` are empty leftover directories — ignore them.)
@@ -134,7 +135,7 @@ Current instances: `exa-website-enrichment/enrich_websites_exa.py` + `enrich_web
 
 **Valid emails only:** AnyMail Finder `risky` results are rejected everywhere — only `email_status == "valid"` emails are written to sheets or pushed to Instantly, and DM name/title/LinkedIn are never written without a valid email (no partial data).
 
-**Sending accounts — attach BY TAG, never individually (revised 2026-08-20):** Jude previously configured mailboxes by hand and the rule was "never attach". He has since reversed that: campaigns should be created WITH `email_tag_list` plus `match_lead_esp: true` and `provider_routing_rules`, copied from whatever he last set. Individual addresses are still never attached — tags only. **The tag set drifts**, so read it off his most recent campaign rather than copying an older script: as of 2026-08-20 `hirebase-healthcare-leads` carries four tags (two added, Zapmail dropped) versus the three hardcoded in `push_florida_demand.py`. `provider_routing_rules` is an ORDERED precedence list and his current order puts the `all -> google` catch-all FIRST, unlike the Florida ordering; reproduce it verbatim.
+**Sending accounts — attach BY TAG, never individually (revised 2026-08-20):** Jude previously configured mailboxes by hand and the rule was "never attach". He has since reversed that: campaigns should be created WITH `email_tag_list` plus `match_lead_esp: true` and `provider_routing_rules`, copied from whatever he last set. Individual addresses are still never attached — tags only. **The tag set drifts**, so read it off his most recent campaign rather than copying an older script: as of 2026-08-20 `hirebase-healthcare-leads/scripts/push_campaign.py` carries FIVE tags (Zapmail re-added the same day it was dropped) versus the three hardcoded in `push_florida_demand.py`. Instantly exposes no tags endpoint — confirm a tag ID via `GET /campaigns` → `email_tag_list` on campaigns that already use it. `provider_routing_rules` is an ORDERED precedence list and his current order puts the `all -> google` catch-all FIRST, unlike the Florida ordering; reproduce it verbatim.
 
 **Casualization is embedded in every GTM generator:** first names (common nicknames only: William→Will), company names (strip legal suffixes/generic tails), cities (local nicknames: Indianapolis→Indy). Canonical rules live in the `casualize-names` skill; each pipeline applies them at generation time (LLM prompt rules or the shared `NICKNAMES` map). Any NEW outreach generator must include them — **except recipient first names, which Jude has now dropped twice** (`production-directory-leads` 2026-08-12, `hirebase-healthcare-leads` 2026-08-19); ask before adding nickname substitution to a new lane.
 
@@ -209,7 +210,7 @@ Azure OpenAI env vars: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_O
 - `nppes-new-clinics` phases 1-3 need no API key (CMS data is free), only the Google OAuth token for `export_leads.py --to_sheet`. Its campaign track (below) needs `ANYMAILFINDER_API_KEY`, `PURPLE_MAGIC_KEY` (Purple Magic / ConnectorOS — `find_dm_waterfall.py`, `pm_rescue.py`), the Azure OpenAI vars, and `APIFY_API_TOKEN`
 - Google Sheets OAuth: `.claude/token.json` (setup via `.claude/setup_google_auth.py`)
 
-Gitignored and therefore absent on a fresh clone: `.claude/.env`, `.claude/token.json` (+ `.claude/token_*.json`), `.claude/scripts/` (see below), and every skill `data/` directory that holds a SQLite store or working JSON — `nppes-new-clinics/data/`, `healthcare-staffing-enrichment/data/`, `production-house-leads/data/`, `production-directory-leads/data/`, `energy-emaas-leads/data/`. A SQLite-backed skill therefore looks empty on a clone; the store rebuilds by re-running phase 1.
+Gitignored and therefore absent on a fresh clone: `.claude/.env`, `.claude/token.json` (+ `.claude/token_*.json`), `.claude/scripts/` (see below), and every skill `data/` directory that holds a SQLite store or working JSON — `nppes-new-clinics/data/`, `healthcare-staffing-enrichment/data/`, `production-house-leads/data/`, `production-directory-leads/data/`, `production-demand-leads/data/`, `hirebase-healthcare-leads/data/`, `energy-emaas-leads/data/`. A SQLite-backed skill therefore looks empty on a clone; the store rebuilds by re-running phase 1. `.claude/campaign_archive` is a symlink to a private archive directory outside the repo — see Shared Utility Scripts.
 
 ## API Quirks
 
@@ -260,6 +261,7 @@ AB:pipeline-specific  AC:pipeline-specific
 `.claude/scripts/` contains one-off and cross-pipeline utilities (not part of any skill's standard pipeline). **This directory is gitignored** — it exists only on Jude's machine and will be absent on a fresh clone, so never assume these scripts are present; check before referencing one. Current local contents:
 - `ingest_apify.py` — generic Apify dataset ingestion
 - `research_dm.py` — standalone DM research
+- `archive_campaign.py` — archives a completed Instantly campaign's config, analytics, leads, and reply emails into `.claude/campaign_archive/<campaign-id>/` (`campaign.json`, `analytics.json`, `leads.jsonl`, `emails.jsonl`). That path is a **symlink to a separate local directory outside this repo** (`~/nexam-campaign-archive`) — it contains lead PII and must never be committed here or made public
 - `generate_emails_uk.py` / `generate_emails_v2.py` — legacy/experimental email generators
 - `verify_emails.py` / `verify_emails_uk.py` — email verification passes
 - `salesnav_enrich.py` / `salesnav_about_enrich.py` — Sales Navigator enrichment
@@ -316,7 +318,7 @@ Standalone enrichment **and outreach** skill for healthcare staffing agency shee
 
 **ICP classification pass (Aug 2026 — runs BEFORE any DM/email spend on the AI Ark tabs):** the Expansion campaign's replies proved keyword filtering can't work here (97-98% of the list mentions healthcare somewhere; a higher-ed nursing recruiter and a nanny agency both passed). Claude-in-session judge flow: `classify_healthcare_icp.py` collects each row's existing sheet text (no scraping, no spend) → Claude judges → `apply_icp_research.py` writes. **Two-axis rule (2026-08-13, supersedes the old 4-way `icp_class`-only taxonomy):** `staffing_firm` (does it recruit/place for clients?) × `serves_healthcare` (are clients healthcare *provider* orgs — any role type placed INTO a provider counts; manufacturer/sponsor-facing work like pharma/device/CRO does NOT). KEEP = both true. Columns: Y:`icp_class` (kept for continuity, plus `MFG_SPONSOR_FACING`), Z:`outreach_flag` (`KEEP` / `SKIP_NOT_STAFFING` / `SKIP_NOT_HEALTHCARE`, written by `flag_outreach_targets.py` or `apply_icp_research.py`), AA:`research_notes`. Verdicts are appended to `data/icp_research_log.jsonl` the moment they're produced (durable judge log, above) and the apply step replays the log — nothing is ever deleted, failing rows are tagged. Downstream DM scripts (`find_ceo_demand.py` etc.) now require Z=KEEP by default (`--require_keep`, override with `--ignore_keep_flag`).
 
-**Large-firm DM track (200+ employees, Aug 2026 — docstrings are the reference):** `find_ceo_pm_demand.py`'s owner-only gate stays correct under 50 employees and must not be repointed; at 200+ the buyer changes, so `find_dm_large_firms.py` is the band-aware clone with a different ladder: owner → new-business leadership → healthcare desk/division owner → ops exec. **The ban list matters more than the ladder** — at a staffing firm the payroll IS clinicians and line recruiters (most common Purple Magic titles on these domains: CNA, recruiter, RN), so clinical/support titles are rejected before any rung is tested, and every rung is anchored on a leadership token. Bare "Director"/"VP"/"Manager" titles go to the Claude-in-session judge, not a looser regex. Third lane: `find_dm_apollo_pm.py` (2026-08-14) — Apollo free search → Google de-obfuscation → **Purple Magic `/find`** (not AMF), over rows both PM's own index and AMF missed; it imports `find_dm_large_firms.py`'s ban+ladder via importlib (one source of truth, no LLM ranking by Jude's explicit call). `find_ceo_demand.py` grew matching flags: `--category` (second-category AMF passes; a hit upgrades, a miss never downgrades), `--sizes` (col C band filter), `--retry_pm` / `--retry_not_found`.
+**Large-firm DM track (200+ employees, Aug 2026 — docstrings are the reference):** `find_ceo_pm_demand.py`'s owner-only gate stays correct under 50 employees and must not be repointed; at 200+ the buyer changes, so `find_dm_large_firms.py` is the band-aware clone with a different ladder: owner → new-business leadership → healthcare desk/division owner → ops exec. **The ban list matters more than the ladder** — at a staffing firm the payroll IS clinicians and line recruiters (most common Purple Magic titles on these domains: CNA, recruiter, RN), so clinical/support titles are rejected before any rung is tested, and every rung is anchored on a leadership token. Bare "Director"/"VP"/"Manager" titles go to the Claude-in-session judge, not a looser regex. Third lane: `find_dm_apollo_pm.py` (2026-08-14) — Apollo free search → Google de-obfuscation → **Purple Magic `/find`** (not AMF), over rows both PM's own index and AMF missed; it imports `find_dm_large_firms.py`'s ban+ladder via importlib (one source of truth, no LLM ranking by Jude's explicit call). `find_ceo_demand.py` grew matching flags: `--category` (second-category AMF passes; a hit upgrades, a miss never downgrades), `--sizes` (col C band filter), `--retry_pm` (now covers `lf_*` rows too) / `--retry_not_found`. `find_dm_large_firms.py` grew `--only_status` (comma-separated exact statuses, e.g. `lf_error:http_500`) for precise retries — prefer it over the blanket `--retry_rejected`, whose `lf_not_found` retries re-spend a paid `/find` call for nothing unless the underlying PM data changed.
 
 **SIA one-offs:** `enrich_sia_emails.py` (AMF person endpoint), `enrich_sia_company_dms.py` (AMF /decision-maker for company-only rows), `rescue_sia_dms.py` (Google-search DM discovery then AMF person) — hardwired to the SIA Attendees sheet's own A-L schema.
 
@@ -402,15 +404,34 @@ Two conventions differ from the rest of the repo and are deliberate: **AC is the
 
 Cloudflare, geography, and profile-thinness gotchas all live in the SKILL.md — the short version: run the scraper with `--local` (cloud runs are CF-blocked), ProductionHub is US+Canada only, and free-tier profiles carry almost no contact data, so domains come from `exa-website-enrichment` on the exported sheet rather than from profile visits.
 
+## production-demand-leads
+
+Demand side of the video production lane (supply side is `production-directory-leads`): detect direct brands that need commercial video NOW, by signal, and **stack signals per company** — single signals reply ~1% in this vertical, stacking is the edge. SQLite-backed (`data/demand.db`, gitignored) like `nppes-new-clinics`. `SKILL.md` is current and has the signal table, scoring weights, and cautions.
+
+Four signal types, each with its own collector: `video_job` (Indeed, video keywords × supply-side metros), `new_exec` (LinkedIn post search → GPT-4.1 extract; the announced person IS the DM, prefilled at T/U/V — verify before spend), `funding` (EDGAR Form D daily indexes, free), and `ad_stale` (FB Ad Library — an **enrichment step over stored companies, not a discovery source**). Order: collectors (any order) → `filter_video_jobs.py` (GPT-4.1 relevance judge; interns/UGC/content-creator = anti-signal) → `classify_companies.py` (only BRAND survives; ENTERPRISE_INHOUSE 10k+ excluded at export, not deleted — that cap is a hypothesis, unlike healthcare's measured 500) → `enrich_adlibrary.py` → `export_batch.py` (score+stack → 29-col sheet, delta-by-default, K/L/R/S/AB standard so `exa-website-enrichment` and `apollo-dm-waterfall` run unmodified). Collectors are idempotent (UNIQUE on company+type+key); re-running is the resume path. Downstream DM/copy/push is gated: the DM ladder for this vertical is an untested hypothesis — get Jude's sign-off before AMF spend.
+
 ## hirebase-healthcare-leads
 
 Healthcare demand lane fed from **HireBase** exports. A SEPARATE skill from
 `healthcare-demand-pipeline` by Jude's explicit call (2026-08-19) — HireBase is
 a different platform under evaluation, and its data is rich enough that the
-enrichment shape genuinely differs. `SKILL.md` is detailed and current; read it
-before touching this lane. Phases: `normalize_export.py` → `resolve_domains.py`
-→ `collect_classification.py` → *Claude judges* → `apply_classification.py`.
-Phase 4+ (DM, copy, push) is NOT built.
+enrichment shape genuinely differs. `SKILL.md` is detailed and current — read it
+before touching this lane; the pipeline is COMPLETE through push. Phases:
+`normalize_export.py` → `resolve_domains.py` → classification
+(`collect_classification.py` → *Claude judges* → `apply_classification.py`,
+plus `delete_rows.py` for approved removals — backs up every row first) →
+identity recovery (`collect_identity_recovery.py` → *Claude judges* →
+`apply_identity_recovery.py`) → `assign_segments.py` → DM discovery
+(`build_dm_worklist.py` → `apollo-dm-waterfall` → `sync_dm_results.py`, then
+`rescue_dm_amf.py` → `rescue_dm_pm.py`) → `generate_bodies.py` →
+`push_campaign.py`.
+
+⚠️ **Both campaigns are ACTIVE as of 2026-08-20** (HireBase SLP + HireBase
+General Healthcare, 324 leads / 324 distinct inboxes) — the frozen-campaign
+rule applies to them and to the sheet rows feeding them. `push_campaign.py`
+holds Jude's current `email_tag_list` + `provider_routing_rules` values (the
+by-tag attach convention started here). Attaching mailboxes moves a campaign to
+status 2 (paused); it is not active until `POST /campaigns/{id}/activate`.
 
 Three things about this platform that will bite if assumed away:
 
@@ -434,18 +455,29 @@ Three things about this platform that will bite if assumed away:
   Surgery in Illinois — that employer is Southern Illinois Healthcare. Because
   the NAME matches, a naive name-vs-domain check ACCEPTS the wrong company's
   website. Detector: profile text has no healthcare signal while the postings
-  are clinical. Those rows are stamped `REVIEW_PROFILE_MISMATCH` and must be
-  held back from spend. The ATS tenant in col AR is the ground truth for
-  recovering the real employer (not built yet).
+  are clinical. Those rows are stamped `REVIEW_PROFILE_MISMATCH` and held back
+  from spend. The ATS tenant in col AR is the ground truth for recovering the
+  real employer — the identity-recovery judge pass rewrites name/website behind
+  a **proof-on-page gate** (a judge-proposed domain is fetched and must name the
+  company, else the name is corrected and the website left blank with
+  `needs_search`). Most recoverable mismatches turned out to be large hospital
+  systems, stamped `REVIEW_OVER_CAP` rather than sent.
 
 **Dedupe is per-JOB on `applicationLink`, never by company** (Jude). Despite the
 name, `jobBoardLink` is the company's board ROOT and maps 1:1 to companies, so
-deduping on it collapses the list to one row per company. Openings-per-company
-is precomputed in AN; one-lead-per-company vs one-per-job is an OPEN Phase 4
-decision. Classification is deliberately light (Jude: "no need to do too hard")
-— default KEEP, 377 auto-kept, 91 judged, nothing deleted. **Downstream must
-require AV == KEEP.** Layout is the 29-col base with AD-AM reserved blank for
-the audit trail and AN-AV carrying HireBase extras + statuses.
+deduping on it collapses the list to one row per company. Rows stay per-job as
+the evidence layer, but **the outreach unit is one lead per COMPANY** (Jude,
+2026-08-19) — openings/cities/roles become copy variables, and
+`build_dm_worklist.py` collapses KEEP rows to one per company BEFORE the
+waterfall (pointing `apollo-dm-waterfall` at a lane tab directly would enrich
+Compassus 380 times). Classification is deliberately light (Jude: "no need to
+do too hard") — default KEEP; suspicious companies reach the judge.
+**Downstream must require AV == KEEP.** `dm_target` is CEO on ALL companies —
+multi-city rows are deliberately NOT routed to a COO (0/87 measured), and the
+`LARGE_ORG` band (AX) is a deliberate large-org-CEO TEST; read reply rates BY
+BAND. Layout is the 29-col base with AD-AM reserved blank for the audit trail
+and AN-BA carrying HireBase extras, statuses, segment/size-band/DM-target and
+copy variables.
 
 ## energy-emaas-leads
 

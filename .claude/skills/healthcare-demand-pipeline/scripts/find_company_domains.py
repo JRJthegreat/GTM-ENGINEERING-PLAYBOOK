@@ -320,8 +320,20 @@ def apify_google_search(queries):
     out = {}
     for item in resp.json():
         q = item.get("searchQuery", {}).get("term", "")
-        if q:
-            out[q] = item.get("organicResults", [])
+        if not q:
+            continue
+        results = item.get("organicResults", [])
+        # Google intermittently wraps organic URLs as opaque redirects
+        # (google.com/goto?url=<token>; first seen 2026-08-27, killed a run:
+        # 28/982 found). The real destination survives in displayedUrl —
+        # restore it; drop results whose displayedUrl is not a URL (follower
+        # counts on social results). Clean responses pass through untouched.
+        for r in results:
+            u = r.get("url") or ""
+            if "google.com/goto" in u:
+                d = (r.get("displayedUrl") or "").split("\u203a")[0].strip()
+                r["url"] = d if d.startswith("http") else ""
+        out[q] = [r for r in results if r.get("url")]
     return out
 
 

@@ -171,3 +171,60 @@ mismatched employer type/team word) with guardrails that protect the claims.
   72-hour sourcing + 30-day refund + no upfront commitment.
 - Funnel: email CTA = "Should I make the intro?"; positive reply → CC the
   recruiter on the thread; recruiter takes over. No price/leads before intro.
+
+## Candidate-angle campaigns (Aug 2026) — ⚠️ LIVE, DO NOT MODIFY
+
+A second copy angle on this pipeline, cloned not parameterized (the July
+Texas scripts still feed the July campaign and are untouched). Copy leads
+with the candidates rather than the pain, and carries no proof story in
+step 1:
+
+```
+Hi {first},
+
+Saw that you posted {a/an} {cleaned_role} role on Indeed.
+
+I know a recruiter who has a few {role_short_plural} looking for new roles.
+
+If relevant, happy to connect you directly with him for more details.
+```
+
+`role_short_plural` is the shortened/paraphrased plural Jude asked for
+("psychiatric nurse practitioners" -> "psychiatric NPs"); it is what the
+candidate line uses, while the first line keeps the full role name.
+**Recipient nickname casualization is ON here** (Jude, 2026-08-26, "use the
+casualize skill"), unlike production-directory and hirebase.
+
+| Campaign | ID | Leads | Scripts |
+|---|---|---|---|
+| Healthcare Texas Candidate - Aug 2026 | `fe47214e-8011-40e7-8fc8-2c6049c169ca` | 429 | `generate_texas_candidate.py` / `push_texas_candidate.py` |
+| Healthcare NY-NJ Candidate - Aug 2026 | `0c020448-f7b4-4780-a93c-a6786d099992` | 528 | same generator / `push_nynj_candidate.py` |
+
+Sheets: Texas `1O2KHLCrq2IgY_7a6Qlh74S9cDBqomLFtQwI6ydvY3So`, NY-NJ
+`11isg_uOuyz8sF-L8KaET3GXoCmb9Y4LhZKQgt81Yax4` (both tab `Leads`).
+NY-NJ's step 3 is STATE-NEUTRAL: the proof story happened in Texas and copy
+claims are historical-only, so the location is dropped rather than moved.
+
+**LARGE 500+ rows are INCLUDED in both** (Jude, 2026-08-27). July's 0/251 was
+confounded (those rows were targeted clinical/HR with no actual CEO among
+them), so this is the first real large-org-CEO test. `size_band` rides on
+every lead as a custom variable — **read reply rates BY BAND**, not pooled.
+
+### First outcome (2026-09-01) — the reply came as a FORWARD, not a reply
+
+Austin Orthopedic Institute (Texas sheet row 438). Dr. Joel Hurt, Orthopedic
+Surgeon & Co-Founder, never replied and never opened-tracked; he forwarded
+the email internally to **Alanna DiBiasi, Director of Physical Therapy**
+(PT, DPT, MS-HCT, FAAOMPT), who wrote in cold at 00:32 the day after the
+final follow-up. Intro made 2026-09-02 to Kris, owner of Affable Care
+Medical Staffing.
+
+Three lessons worth carrying:
+- **Forwards are invisible in the metrics.** `email_reply_count` was 0 on
+  that lead. Judging this copy on reply rate alone would have scored the
+  win as a miss. Check the inbox, not just Instantly's counters.
+- **The DM ladder worked as designed but the buyer was one step over.** The
+  owner was the right door; the department head was the actual buyer, and
+  the owner routed it. That is the ladder succeeding, not failing.
+- **Verify the advertised salary before an intro.** Their Indeed ad said
+  $80-90k; the hiring manager quoted $75-85k. Candidates anchor on the ad.

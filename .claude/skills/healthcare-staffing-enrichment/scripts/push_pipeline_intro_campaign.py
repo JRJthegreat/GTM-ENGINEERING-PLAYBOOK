@@ -96,8 +96,8 @@ BODY = (
     "simple: I'll introduce you to 2 employers currently in my pipeline, no "
     "strings attached. If it's valuable, then we can talk about working together "
     "long term. The only thing I need from you is 15 minutes so I can learn the "
-    "specifics around the roles and organizations you like to work with. Worth "
-    "the 15-min chat?"
+    "specifics around the roles and organizations you like to work with.\n\n"
+    "Worth the 15-min chat?"
 )
 
 SUBJECT = "2 healthcare employers hiring"

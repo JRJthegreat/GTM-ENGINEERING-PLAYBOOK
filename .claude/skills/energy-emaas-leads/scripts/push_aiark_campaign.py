@@ -126,7 +126,28 @@ def main():
             "sequences": [{"steps": steps}],
             "text_only": True,
             "first_email_text_only": True,
-            "daily_limit": 100,
+            "daily_limit": 500,
+            "stop_on_reply": True,
+            "link_tracking": False,
+            "open_tracking": False,
+            # Sending accounts attach BY TAG, never individually (Jude, revised
+            # 2026-08-20). This set + the all->google-first routing were read
+            # off his latest live campaign (Pipeline Intro, Sep 2026). The tag
+            # set DRIFTS - re-read it from GET /campaigns on his most recent
+            # campaign before each new push rather than trusting these ids.
+            "match_lead_esp": True,
+            "email_tag_list": [
+                "2b2adf27-cf48-4ed1-bcb4-513ecb49f719",
+                "ce2014e8-b42f-415e-b5f3-c185093f2042",
+                "d221f400-cd05-4ca0-bf28-c5194227f701",
+                "d00f89d5-9a82-4602-8614-64a172de6424",
+                "ba2df4e6-a8a7-412d-833e-b6b48c5e12da",
+            ],
+            "provider_routing_rules": [
+                {"action": "send", "recipient_esp": ["all"], "sender_esp": ["google"]},
+                {"action": "send", "recipient_esp": ["google"], "sender_esp": ["google"]},
+                {"action": "send", "recipient_esp": ["outlook"], "sender_esp": ["outlook"]},
+            ],
         }
         resp = requests.post(f"{API}/campaigns", headers=HDRS, json=payload, timeout=60)
         if resp.status_code not in (200, 201):

@@ -164,6 +164,7 @@ COL_DM_EMAIL = 16      # Q
 COL_DM_LINKEDIN = 17   # R
 COL_EMAIL_STATUS = 18  # S
 COL_RUNG = 23          # X
+COL_OUTREACH_FLAG = 25  # Z, written by apply_icp_research.py — KEEP/SKIP_*
 
 WRITE_BATCH = 10
 
@@ -375,12 +376,22 @@ def main():
     ap.add_argument("--any_size", action="store_true",
                     help="ignore the band filter (e.g. to sweep pm_bad_title rows)")
     ap.add_argument("--retry_rejected", action="store_true", default=True,
-                    help="include rows already stamped pm_*/lf_* (cache replays free)")
+                    help="include rows already stamped pm_*/lf_* (cache replays free, but "
+                         "lf_not_found retries re-spend a paid /find call for no new benefit "
+                         "unless the underlying PM data changed — prefer --only_status for a "
+                         "precise retry instead of this blanket flag)")
+    ap.add_argument("--only_status", default="",
+                    help="comma-separated status values (e.g. lf_error:http_500) — restricts "
+                         "retry to exactly these, instead of every non-found row")
     ap.add_argument("--cache_only", action="store_true",
                     help="replay the gate over cached responses; no API calls, no writes")
     ap.add_argument("--out", default="", help="cache_only: write ambiguous pile here")
     ap.add_argument("--verdicts", default="", help="JSON {domain: fullName|\"\"}")
     ap.add_argument("--dry_run", action="store_true")
+    ap.add_argument("--require_keep", action="store_true", default=True,
+                    help="only target rows column Z tags KEEP (skip if Z is blank/absent)")
+    ap.add_argument("--ignore_keep_flag", action="store_true",
+                    help="override --require_keep — target by size band alone, ICP tag ignored")
     args = ap.parse_args()
 
     if not PM_KEY and not (args.dry_run or args.cache_only):
@@ -397,7 +408,7 @@ def main():
     tab = args.tab
     service = get_service()
     rows = service.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range=f"'{tab}'!A:X").execute().get("values", [])[1:]
+        spreadsheetId=sheet_id, range=f"'{tab}'!A:Z").execute().get("values", [])[1:]
 
     bands = {b.strip() for b in args.sizes.split(",") if b.strip()}
     targets = []
@@ -411,12 +422,19 @@ def main():
             continue
         if not args.any_size and size not in bands:
             continue
+        if args.require_keep and not args.ignore_keep_flag:
+            if cell(COL_OUTREACH_FLAG) != "KEEP":
+                continue
         # Any status other than a successful "found" means the row still has
         # no email, whichever lane stamped it. The AMF lane writes "not found"
         # while the PM lane writes pm_*, so keying on a prefix would silently
         # skip every large firm that was misfiled into the 1-50 tab.
         stale = status.strip().lower() not in ("found",)
-        if status and not (args.retry_rejected and stale):
+        only = {v.strip() for v in args.only_status.split(",") if v.strip()}
+        if only:
+            if status not in only:
+                continue
+        elif status and not (args.retry_rejected and stale):
             continue
         targets.append({"row": i + 2, "name": name, "domain": domain, "size": size})
     if args.limit:

@@ -59,7 +59,7 @@ COL_ICP = 24        # Y
 COL_FLAG = 25        # Z
 COL_NOTES = 26        # AA
 
-WRITE_BATCH = 10
+WRITE_BATCH = 400
 
 
 def col_letter(idx):

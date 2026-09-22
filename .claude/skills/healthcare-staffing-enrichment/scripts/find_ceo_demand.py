@@ -50,12 +50,14 @@ HOSTING_DOMAINS = {
 }
 
 COL_NAME    = 0    # A
+COL_EMPSIZE = 2    # C
 COL_WEBSITE = 7    # H
 COL_DM_NAME     = 14  # O
 COL_DM_TITLE    = 15  # P
 COL_DM_EMAIL    = 16  # Q
 COL_DM_LINKEDIN = 17  # R
 COL_EMAIL_STATUS = 18 # S
+COL_OUTREACH_FLAG = 25  # Z, written by apply_icp_research.py — KEEP/SKIP_*
 
 WRITE_BATCH = 10
 AMF_WORKERS = 8
@@ -146,9 +148,9 @@ def get_domain(row):
     return domain
 
 
-def amf_decision_maker(domain, company_name):
+def amf_decision_maker(domain, company_name, category="ceo"):
     headers = {"Authorization": AMF_API_KEY, "Content-Type": "application/json"}
-    body = {"decision_maker_category": ["ceo"]}
+    body = {"decision_maker_category": [category]}
     if domain:
         body["domain"] = domain
     if company_name:
@@ -211,8 +213,24 @@ def main():
     ap.add_argument("--target", type=int, default=500)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--retry_pm", action="store_true",
-                    help="run on rows Purple Magic missed (S starts with pm_) "
-                         "instead of untouched rows — the AMF second lane")
+                    help="run on rows a Purple Magic lane missed (S starts with "
+                         "pm_ or lf_) instead of untouched rows — the AMF second lane")
+    ap.add_argument("--sizes", default="",
+                    help="comma-separated Employee Size band(s) (col C) to restrict to, "
+                         "e.g. '51-200' — empty means no size filter")
+    ap.add_argument("--require_keep", action="store_true", default=True,
+                    help="only target rows column Z tags KEEP (skip if Z is blank/absent)")
+    ap.add_argument("--ignore_keep_flag", action="store_true",
+                    help="override --require_keep — target regardless of ICP tag")
+    ap.add_argument("--category", default="ceo",
+                    help="AMF decision_maker_category (ceo, operations, hr, it, sales, "
+                         "marketing, finance, engineering, logistics, buyer — NOT 'coo', "
+                         "use 'operations'). A hit here upgrades the row; a miss never "
+                         "downgrades a prior find (only 'not found'/pm_/lf_ rows are eligible).")
+    ap.add_argument("--retry_not_found", action="store_true",
+                    help="also retarget rows already stamped a plain 'not found' — for "
+                         "running a second --category pass over the first category's misses. "
+                         "Safe to combine with --retry_pm.")
     args = ap.parse_args()
 
     if not AMF_API_KEY:
@@ -224,7 +242,7 @@ def main():
     ensure_headers(service, sheet_id, tab)
 
     rows = service.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range=f"'{tab}'!A:S"
+        spreadsheetId=sheet_id, range=f"'{tab}'!A:Z"
     ).execute().get("values", [])[1:]
 
     already = count_verified(rows)
@@ -233,14 +251,28 @@ def main():
     if already >= args.target:
         print("Target already reached — nothing to do."); return
 
+    bands = {b.strip() for b in args.sizes.split(",") if b.strip()}
     targets = []
     for i, row in enumerate(rows):
-        name = (row[COL_NAME] if len(row) > COL_NAME else "").strip()
-        status = (row[COL_EMAIL_STATUS] if len(row) > COL_EMAIL_STATUS else "").strip()
+        def cell(idx):
+            return (row[idx].strip() if len(row) > idx and row[idx] else "")
+        name = cell(COL_NAME)
+        status = cell(COL_EMAIL_STATUS)
         domain = get_domain(row)
-        pending = status.startswith("pm_") if args.retry_pm else not status
-        if name and pending and domain:
-            targets.append({"row": i + 2, "name": name, "domain": domain})
+        if args.retry_pm:
+            pending = status.startswith(("pm_", "lf_"))
+            if args.retry_not_found:
+                pending = pending or status.strip().lower() == "not found"
+        else:
+            pending = not status
+        if not (name and pending and domain):
+            continue
+        if bands and cell(COL_EMPSIZE) not in bands:
+            continue
+        if args.require_keep and not args.ignore_keep_flag:
+            if cell(COL_OUTREACH_FLAG) != "KEEP":
+                continue
+        targets.append({"row": i + 2, "name": name, "domain": domain})
     if args.limit:
         targets = targets[:args.limit]
 
@@ -254,7 +286,7 @@ def main():
         # burning AMF credits on candidates we no longer need.
         if stop_event.is_set():
             return t, {"skip": True}
-        return t, amf_decision_maker(t["domain"], t["name"])
+        return t, amf_decision_maker(t["domain"], t["name"], args.category)
 
     with ThreadPoolExecutor(max_workers=AMF_WORKERS) as ex:
         futures = [ex.submit(run, t) for t in targets]

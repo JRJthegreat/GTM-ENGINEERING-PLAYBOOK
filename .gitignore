@@ -22,6 +22,8 @@
 .claude/skills/energy-emaas-leads/data/
 .claude/skills/production-demand-leads/data/
 .claude/skills/hirebase-healthcare-leads/data/
+.claude/skills/equipment-finance-leads/data/
+.claude/skills/trades-staffing-leads/data/
 
 # Python
 __pycache__/

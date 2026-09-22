@@ -11,6 +11,9 @@
 *.key
 
 # Local state
+# .agents/ is a generated Codex byte-copy of .claude/skills INCLUDING the
+# data/ stores (2.2GB, lead PII) — never track it; regenerate by re-copying.
+.agents/
 .claude/scheduled_tasks.lock
 .claude/cache/
 .claude/scripts/
@@ -41,4 +44,4 @@ venv/
 .idea/
 .vscode/
 *.swp
-.claude/campaign_archive/
+.claude/campaign_archive
